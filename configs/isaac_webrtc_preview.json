@@ -1,0 +1,17 @@
+{
+  "gripper": {
+    "mount_tilt_range_deg": [
+      0.0,
+      2.0
+    ],
+    "final_jaw_width_range_m": [
+      0.04,
+      0.045
+    ]
+  },
+  "simulation": {
+    "timestep_s": 0.0005,
+    "capture_every_steps": 50,
+    "solver_iterations": 200
+  }
+}

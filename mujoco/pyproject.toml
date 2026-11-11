@@ -1,0 +1,16 @@
+[project]
+name = "soft-sim-mujoco"
+version = "0.1.0"
+description = "Isolated MuJoCo development environment"
+requires-python = ">=3.12,<3.13"
+dependencies = ["mujoco==4.0.0", "numpy>=2.2"]
+
+[tool.uv]
+package = false
+cache-dir = ".uv-cache"
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[[tool.uv.index]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+default = true

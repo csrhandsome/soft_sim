@@ -1,0 +1,55 @@
+{
+  "source": "https://www.modelscope.cn/api/v1/datasets/RoboDojo-Benchmark/RoboDojo/repo/",
+  "revision": "master",
+  "prefix": "Assets/Object/RoboDojo/Rigid/bottle/00000",
+  "files": [
+    {
+      "Id": null,
+      "Name": "description.json",
+      "Type": "blob",
+      "Path": "Assets/Object/RoboDojo/Rigid/bottle/00000/description.json",
+      "Mode": "33188",
+      "CommitId": null,
+      "CommitMessage": "Upload Assets (Round 1 (parallel))",
+      "CommitterName": "kaslen",
+      "CommittedDate": 1784129328,
+      "Revision": "7ea19a0792495b37770f293a092c6d4da87983bb",
+      "IsLFS": true,
+      "Size": 7519,
+      "InCheck": false,
+      "Sha256": "9c98ea57af26b90fcf9556ba2e5150cd788ef30e21c6e6ece8ae21eec450bad6"
+    },
+    {
+      "Id": null,
+      "Name": "metadata.json",
+      "Type": "blob",
+      "Path": "Assets/Object/RoboDojo/Rigid/bottle/00000/metadata.json",
+      "Mode": "33188",
+      "CommitId": null,
+      "CommitMessage": "Upload Assets (Round 1 (parallel))",
+      "CommitterName": "kaslen",
+      "CommittedDate": 1784129328,
+      "Revision": "7ea19a0792495b37770f293a092c6d4da87983bb",
+      "IsLFS": true,
+      "Size": 4469,
+      "InCheck": false,
+      "Sha256": "97aa47eadb3d1251bb5841c0eb0c467be48d9ac287bdbb58fbbcdbd0948f584c"
+    },
+    {
+      "Id": null,
+      "Name": "object.usdz",
+      "Type": "blob",
+      "Path": "Assets/Object/RoboDojo/Rigid/bottle/00000/object.usdz",
+      "Mode": "33188",
+      "CommitId": null,
+      "CommitMessage": "Upload Assets (Round 1 (parallel))",
+      "CommitterName": "kaslen",
+      "CommittedDate": 1784129330,
+      "Revision": "ccd9f5ada63cd57096de680156c6ea43293d547e",
+      "IsLFS": true,
+      "Size": 30579391,
+      "InCheck": false,
+      "Sha256": "3a2ea65ba9d44eaab2f1916b8ddf599d9d4a8a62181bc28ed3036062073aac57"
+    }
+  ]
+}

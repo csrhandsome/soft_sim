@@ -1,0 +1,71 @@
+{
+  "source": "https://www.modelscope.cn/api/v1/datasets/RoboDojo-Benchmark/RoboDojo/repo/",
+  "revision": "master",
+  "prefix": "Assets/Material/material_0122",
+  "files": [
+    {
+      "Id": null,
+      "Name": "Mahogany_Planks.mdl",
+      "Type": "blob",
+      "Path": "Assets/Material/material_0122/Mahogany_Planks.mdl",
+      "Mode": "33188",
+      "CommitId": null,
+      "CommitMessage": "Upload Assets (batch 18/30)",
+      "CommitterName": "kaslen",
+      "CommittedDate": 1784128086,
+      "Revision": "0c1f6b04e82685615445a5540dbe952aca555bf8",
+      "IsLFS": false,
+      "Size": 1940,
+      "InCheck": false,
+      "Sha256": "c3c19fec59419b77a73deb0dfca6f8303fa6629af1ad93b8f4d792da8131b4cb"
+    },
+    {
+      "Id": null,
+      "Name": "Mahogany_Planks_BaseColor.png",
+      "Type": "blob",
+      "Path": "Assets/Material/material_0122/Mahogany_Planks_BaseColor.png",
+      "Mode": "33188",
+      "CommitId": null,
+      "CommitMessage": "Upload Assets (batch 18/30)",
+      "CommitterName": "kaslen",
+      "CommittedDate": 1784128086,
+      "Revision": "0c1f6b04e82685615445a5540dbe952aca555bf8",
+      "IsLFS": true,
+      "Size": 5750346,
+      "InCheck": false,
+      "Sha256": "d3e69dacd264d481738b2a995ad793531515a153ec8a168e5c4b6d5a4dfb38ec"
+    },
+    {
+      "Id": null,
+      "Name": "Mahogany_Planks_N.png",
+      "Type": "blob",
+      "Path": "Assets/Material/material_0122/Mahogany_Planks_N.png",
+      "Mode": "33188",
+      "CommitId": null,
+      "CommitMessage": "Upload Assets (batch 18/30)",
+      "CommitterName": "kaslen",
+      "CommittedDate": 1784128086,
+      "Revision": "0c1f6b04e82685615445a5540dbe952aca555bf8",
+      "IsLFS": true,
+      "Size": 5656449,
+      "InCheck": false,
+      "Sha256": "04b0e9d1611c4e1722085e15299197c69d9f813f0b77e96b476fc04b38407edb"
+    },
+    {
+      "Id": null,
+      "Name": "Mahogany_Planks_ORM.png",
+      "Type": "blob",
+      "Path": "Assets/Material/material_0122/Mahogany_Planks_ORM.png",
+      "Mode": "33188",
+      "CommitId": null,
+      "CommitMessage": "Upload Assets (batch 18/30)",
+      "CommitterName": "kaslen",
+      "CommittedDate": 1784128086,
+      "Revision": "0c1f6b04e82685615445a5540dbe952aca555bf8",
+      "IsLFS": true,
+      "Size": 6246551,
+      "InCheck": false,
+      "Sha256": "5fe20889ad4737833ca2a4425aedf28c1bf34a0d1730827bf4f0403482404797"
+    }
+  ]
+}

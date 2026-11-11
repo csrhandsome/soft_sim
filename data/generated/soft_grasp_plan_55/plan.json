@@ -1,0 +1,113 @@
+{
+  "status": "planned",
+  "candidate": {
+    "tcp": [
+      0.41999998688697815,
+      -0.119999997317791,
+      0.14001275599002838
+    ],
+    "rotation": [
+      [
+        6.123233995736766e-17,
+        0.17364817766693041,
+        0.984807753012208
+      ],
+      [
+        1.0,
+        -1.0632884247878861e-17,
+        -6.030208312509488e-17
+      ],
+      [
+        0.0,
+        0.984807753012208,
+        -0.17364817766693041
+      ]
+    ],
+    "opened": 0.08,
+    "closed": 0.026999999999999996,
+    "width": 0.026186188704534083,
+    "tilt_deg": 80,
+    "yaw_deg": 90.0,
+    "clearance_m": 0.002647258655324433,
+    "antipodal": 0.8575110297252279,
+    "score": 8.175110297252278
+  },
+  "world_from_robot_base_translation_m": [
+    0.0,
+    0.0,
+    0.12
+  ],
+  "contact_height_m": 0.055,
+  "finger_inner_radius_m": 0.009584728581018035,
+  "hand_to_tcp_m": 0.13,
+  "initial_q": [
+    0.05898642130336454,
+    -0.16905318043970705,
+    -0.3422968890664441,
+    -2.570377828635551,
+    -0.0845907428070295,
+    2.4090758513634025,
+    0.5699077264153156,
+    0.04,
+    0.04
+  ],
+  "scene": {
+    "object_asset": "/data/codes/grade_two/my_projects/robot/soft_sim/RoboDojo/Assets/Object/RoboDojo/Clutter/ball/00000/object.usdz",
+    "object_width_m": 0.04,
+    "initial_object_position": [
+      0.42,
+      -0.12,
+      0.14001275807654207
+    ],
+    "table_z": 0.12,
+    "initial_q": [
+      0.05898642130336454,
+      -0.16905318043970705,
+      -0.3422968890664441,
+      -2.570377828635551,
+      -0.0845907428070295,
+      2.4090758513634025,
+      0.5699077264153156,
+      0.04,
+      0.04
+    ],
+    "hand_mount_offset_m": 0.075,
+    "adapter_offset_m": 0.008,
+    "finger_mesh": "data/assetes/soft_finger.stl"
+  },
+  "trajectory_file": "joints.npz",
+  "sample_dt_s": 0.02,
+  "planner": "mplib RRT pregrasp/lift + collision-checked Cartesian approach/probe; full shared STL + adapter/camera proxies + carried object",
+  "collision_checked": true,
+  "physical_grasp_validated": true,
+  "probe_lift_m": 0.012,
+  "lift_goal_rotation": [
+    [
+      6.123233995736766e-17,
+      0.17364817766693041,
+      0.984807753012208
+    ],
+    [
+      1.0,
+      -1.0632884247878861e-17,
+      -6.030208312509488e-17
+    ],
+    [
+      0.0,
+      0.984807753012208,
+      -0.17364817766693041
+    ]
+  ],
+  "attempts": [],
+  "friction_coefficient": 0.7,
+  "physical_validation": {
+    "result": "data/runs/soft_planned_grasp_55/result.json",
+    "rollout_count": 1,
+    "max_lift_m": 0.08201552927494049,
+    "min_held_lift_m": 0.07746218144893646,
+    "hold_duration_s": 1.0,
+    "joint_trajectory_sha256": "f3ffcc5b34c4c2789296b786b1d89767312dd9b6db17d88a57494cc6a27e70ad",
+    "robot_urdf_sha256": "0dde4d5c3e8d3e53908ee65ec15e334184ef39d3a5f38ef40c28e70bb19e83e1",
+    "finger_stl_sha256": "60c7f0769c0937e802d4d8a388d28985c206430313e5a26d196b4c6f9d8bed3d"
+  }
+}

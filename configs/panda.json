@@ -1,0 +1,8 @@
+{
+  "gripper": {
+    "profile": "panda",
+    "open_jaw_width_m": 0.080,
+    "final_jaw_width_range_m": [0.005, 0.025],
+    "mount_tilt_range_deg": [0.0, 12.0]
+  }
+}

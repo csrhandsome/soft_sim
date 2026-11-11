@@ -1,0 +1,122 @@
+[
+  {
+    "index": 0,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 1,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 2,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 3,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 4,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 5,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 6,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 7,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 8,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 9,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 10,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 11,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 12,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 13,
+    "phase": "final_approach",
+    "status": "Cartesian interpolation collision"
+  },
+  {
+    "index": 14,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 15,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 16,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 17,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 18,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 19,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 20,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 21,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 22,
+    "phase": "final_approach",
+    "status": "Cartesian IK: IK Failed! Cannot find valid solution."
+  },
+  {
+    "index": 23,
+    "phase": "pregrasp",
+    "status": "IK Failed! Cannot find valid solution."
+  }
+]
