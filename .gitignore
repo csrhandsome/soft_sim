@@ -28,3 +28,6 @@ dist/
 # Downloaded scene assets and generated runs stay local. Keep the reference mesh.
 /data/scene_assets/
 /data/logs/
+
+# TOML-managed third-party source snapshots.
+/.deps/

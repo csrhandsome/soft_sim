@@ -1,13 +1,13 @@
 """GPU diagnostic: separate inertial/gravity deformation from object contact."""
 from pathlib import Path
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import json
 import numpy as np
 from shared.config import ExperimentConfig
 from shared.experiment import EpisodeSpec, gripper_state
 from shared.geometry import transform_points
-from soft_gripper_env import IsaacSimGripperEnv
+from backends.isaac_sim.soft_gripper_env import IsaacSimGripperEnv
 
 cfg = ExperimentConfig.load('configs/isaac_webrtc_preview.json')
 cfg.simulation.render = False

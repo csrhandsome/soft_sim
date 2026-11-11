@@ -1,15 +1,15 @@
 """Interactive tabletop viewer; physics runs on ASUS and UI streams to the client."""
 from pathlib import Path
 import sys
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
 import argparse
 import json
 import time
 import numpy as np
 from shared.config import ExperimentConfig
 from shared.experiment import EpisodeSpec, gripper_state
-from app_launcher import add_livestream_arguments, configure_visualization
-from soft_gripper_env import IsaacSimGripperEnv
+from backends.isaac_sim.app_launcher import add_livestream_arguments, configure_visualization
+from backends.isaac_sim.soft_gripper_env import IsaacSimGripperEnv
 
 parser=argparse.ArgumentParser()
 add_livestream_arguments(parser)
@@ -37,7 +37,7 @@ cfg.object.fixed=args.mode=='fixed'
 cfg.object.rotation_rpy_range_deg=((-12.,12.),(-12.,12.),(-80.,80.))
 configure_visualization(parser,args,cfg.simulation)
 cfg.validate()
-root=Path(__file__).resolve().parents[1]
+root=Path(__file__).resolve().parents[2]
 objects=args.objects or [('usd:data/scene_assets/ycb/'+name+'.usd') for name in ('003_cracker_box','005_tomato_soup_can','011_banana') if (root/'data/scene_assets/ycb'/ (name+'.usd')).exists()]
 if not objects: objects=['box','cylinder','sphere']
 print('SHOWCASE_OBJECTS',json.dumps(objects),flush=True)
@@ -74,7 +74,7 @@ with window.frame:
 
 def camera_view():
     if hasattr(env,'surface_meshes') and env.surface_meshes:
-        from render_surface import update_surfaces
+        from backends.isaac_sim.render_surface import update_surfaces
         update_surfaces(env)
         for name,mesh in zip(('left','right'),env.surface_meshes):
             UsdGeom.Imageable(env.stage.GetPrimAtPath('/World/Finger_'+name)).GetPurposeAttr().Set('default' if state['collision_mesh'] else 'guide')
@@ -94,7 +94,7 @@ try:
         episode.object_shape=objects[index%len(objects)]
         env.episode=episode;env.state=gripper_state(cfg.gripper,episode,0.)
         env.build_scene(episode)
-        from render_surface import create_surfaces
+        from backends.isaac_sim.render_surface import create_surfaces
         create_surfaces(env)
         camera_view()
         name=episode.object_shape.rsplit('/',1)[-1].replace('.usdz','').replace('.usd','')

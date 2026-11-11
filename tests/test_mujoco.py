@@ -8,10 +8,9 @@ import unittest
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'mujoco'))
 from shared.config import ExperimentConfig
 from shared.experiment import EpisodeSpec
-from soft_gripper_env import MuJoCoGripperEnv
+from backends.mujoco_sim.soft_gripper_env import MuJoCoGripperEnv
 
 
 class MuJoCoIntegration(unittest.TestCase):

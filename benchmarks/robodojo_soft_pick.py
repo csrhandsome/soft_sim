@@ -11,12 +11,12 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT), str(ROOT / "isaacsim")]
+sys.path.insert(0, str(ROOT))
 import numpy as np
 from shared.config import ExperimentConfig
 from shared.geometry import matrix_to_quat_wxyz, camera_intrinsics, transform_points
 from shared.tool_mount import mounts_from_tool
-from app_launcher import create_simulation_app, add_livestream_arguments, configure_visualization
+from backends.isaac_sim.app_launcher import create_simulation_app, add_livestream_arguments, configure_visualization
 from isaac51_tool import MountedSoftTool
 
 

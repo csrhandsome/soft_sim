@@ -1,7 +1,7 @@
 """Franka arm + existing FEM fingers: contact-driven pick and place, with WebRTC."""
 from pathlib import Path
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import json
@@ -11,10 +11,10 @@ import numpy as np
 from shared.config import ExperimentConfig
 from shared.experiment import EpisodeSpec, GripperState
 from shared.geometry import finger_pose, transform_points, matrix_to_quat_wxyz
-from soft_gripper_env import IsaacSimGripperEnv
-from app_launcher import add_livestream_arguments, configure_visualization
+from backends.isaac_sim.soft_gripper_env import IsaacSimGripperEnv
+from backends.isaac_sim.app_launcher import add_livestream_arguments, configure_visualization
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 TABLE_Z = .12
 BASE = np.array([0., 0., TABLE_Z])
 HAND_R = np.diag([1., -1., -1.])
@@ -73,7 +73,7 @@ class FrankaSoftEnv(IsaacSimGripperEnv):
         self.robot.set_dof_position_targets(np.r_[self.q, 0., 0.][None])
         self.sync_hand()
         self.set_gripper_state(self.state)
-        from render_surface import create_surfaces
+        from backends.isaac_sim.render_surface import create_surfaces
         create_surfaces(self)
         self.set_camera()
 
@@ -81,8 +81,8 @@ class FrankaSoftEnv(IsaacSimGripperEnv):
         super()._build_object(episode)
         from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade, PhysxSchema
         from isaacsim.core.experimental.prims import Articulation
-        from assets import add_usd_reference
-        from presentation import material, box, bind
+        from backends.isaac_sim.assets import add_usd_reference
+        from backends.isaac_sim.presentation import material, box, bind
         prim = add_usd_reference(self.stage, self.robot_usd or 'panda', '/World/Franka')
         # Replace the factory fingertips visually and physically, keeping its hand.
         for name in ('panda_leftfinger', 'panda_rightfinger'):
@@ -189,7 +189,7 @@ def run_episode(env, seed, out, args):
     env.state = GripperState(np.zeros(2), .08, .12, 0.)
     env.hand_position = np.array([.42, -.12, .44])
     env.build_scene(episode)
-    from render_surface import update_surfaces
+    from backends.isaac_sim.render_surface import update_surfaces
     import omni.ui as ui
     window = ui.Window('Franka soft-finger pick and place', width=360, height=160)
     window.position_x = 900

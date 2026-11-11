@@ -1,3 +1,5 @@
+> 当前安装与验证命令见 [根 README](../README.md)。以下旧 Isaac 6.2 实验说明保留作参考；RoboDojo 主环境为 5.1。
+
 # 双软手指与指内相机
 
 当前场景把一份 STL 实例化为左右两根 TPU 软手指。每根手指底部各有一台相机，镜头沿该手指的局部 +Z 看向内部横梁。左右相机使用完全相同的局部安装位置和安装旋转，随各自手指底座运动；焦距可以独立随机化，也可以在扫描实验中设为同一值。软指是体变形模型，不是只会变换位姿的刚性 STL。
@@ -15,10 +17,10 @@ shared/
   force.py         无原生力报告时的显式准静态估计
   learning.py      双相机图像估力的 NumPy ridge 基线
   cli.py           两个后端共用的实验命令
-mujoco/soft_gripper_env.py     MuJoCoGripperEnv(BaseGripperEnv)
-isaacsim/soft_gripper_env.py   IsaacSimGripperEnv(BaseGripperEnv)
-isaacsim/assets.py            官方/本地 USD 路径解析
-isaacsim/inspect_assets.py    现成资产的关节与连接点检查
+backends/mujoco_sim/soft_gripper_env.py     MuJoCoGripperEnv(BaseGripperEnv)
+backends/isaac_sim/soft_gripper_env.py   IsaacSimGripperEnv(BaseGripperEnv)
+backends/isaac_sim/assets.py            官方/本地 USD 路径解析
+backends/isaac_sim/inspect_assets.py    现成资产的关节与连接点检查
 ```
 
 新增后端只需继承 `BaseGripperEnv`，实现建场景、设置边界状态、物理步进、节点/物体状态读取、接触力和双相机渲染。共享层执行相同轨迹和采集流程，后端分别映射自己的材料、软体和传感 API。
@@ -52,11 +54,11 @@ STL 没有单位。读取到 812 个唯一顶点、1700 个三角面，封闭、
 
 ```bash
 # 默认仅依赖 NumPy，两个环境使用同一份生成文件
-uv run --project mujoco --no-sync python scripts/prepare_mesh.py
+uv run --no-sync python scripts/prepare_mesh.py
 
 # 可选 Gmsh 贴面网格；首次需要联网解析 gmsh，Linux 可能需要系统 libGLU
 # Gmsh 路径当前尚未实际运行验证
-uv run --project mujoco --with gmsh python scripts/prepare_mesh.py --method gmsh --pitch 0.003
+uv run --with gmsh python scripts/prepare_mesh.py --method gmsh --pitch 0.003
 ```
 
 网格保存源 STL 的 SHA256、单位、分辨率、生成方法和体积。STL 或单位改变后，旧网格会被拒绝，防止两个环境意外模拟不同几何。
@@ -71,27 +73,27 @@ MuJoCo 默认使用三线性插值，网格控制单元为 `2×2×5`，固定底
 
 ```bash
 # 先采三种基本形状，默认每次随机物体、安装倾角和两台相机的焦距
-MUJOCO_GL=egl uv run --project mujoco --no-sync python mujoco/run.py --episodes 10
+MUJOCO_GL=egl uv run --no-sync python backends/mujoco_sim/run.py --episodes 10
 
 # 无相机的物理验证，无法用于图像训练
-uv run --project mujoco --no-sync python mujoco/run.py --no-render --output data/runs/physics
+uv run --no-sync python backends/mujoco_sim/run.py --no-render --output data/runs/physics
 
 # 图形窗口；有窗口的环境可按需不设置 MUJOCO_GL
-uv run --project mujoco --no-sync python mujoco/run.py --gui --output data/runs/gui
+uv run --no-sync python backends/mujoco_sim/run.py --gui --output data/runs/gui
 
 # 同一物体，系统比较 3 个安装倾角 × 2 个焦距 × 2 个闭合终点
-MUJOCO_GL=egl uv run --project mujoco --no-sync python mujoco/run.py \
+MUJOCO_GL=egl uv run --no-sync python backends/mujoco_sim/run.py \
   --episodes 3 --sweep-tilts 0 5 10 --sweep-focals 2 3.2 \
   --sweep-widths 0.01 0.025 --output data/runs/sweep
 
 # Panda / 角度构形
-uv run --project mujoco --no-sync python mujoco/run.py --config configs/panda.json --no-render --output data/runs/panda
-uv run --project mujoco --no-sync python mujoco/run.py --config configs/angular.json \
+uv run --no-sync python backends/mujoco_sim/run.py --config configs/panda.json --no-render --output data/runs/panda
+uv run --no-sync python backends/mujoco_sim/run.py --config configs/angular.json \
   --sweep-angles 15 22 28 --no-render --output data/runs/angular
 
 # Isaac Sim，在宿主机有 GPU 的终端运行
-uv run --project isaacsim --no-sync python isaacsim/run.py --episodes 3
-uv run --project isaacsim --no-sync python isaacsim/run.py \
+python backends/isaac_sim/run.py --episodes 3
+python backends/isaac_sim/run.py \
   --config configs/isaac_ycb.json --episodes 3 --output data/runs/isaac_ycb
 ```
 
@@ -106,11 +108,11 @@ SSH 负责启动远端进程，官方 WebRTC livestream 负责传输界面。无
 在服务器上、仓库根目录执行，把 `SERVER_IP` 换成客户端能直达的服务器 IPv4 地址（局域网、VPN 或公网地址）：
 
 ```bash
-uv run --project isaacsim --no-sync python isaacsim/run.py \
+python backends/isaac_sim/run.py \
   --livestream --livestream-ip SERVER_IP --episodes 3
 
 # 查看官方夹爪资产也支持同一串流模式
-uv run --project isaacsim --no-sync python isaacsim/inspect_assets.py robotiq_2f85 \
+python backends/isaac_sim/inspect_assets.py robotiq_2f85 \
   --livestream --livestream-ip SERVER_IP
 ```
 
@@ -136,7 +138,7 @@ ASUS 的 Tailscale IPv4 是 `100.95.209.124`，Mac 与其 VPN 已互通。Mac �
 从 ASUS 的项目根目录运行以下命令；每次重跑更换输出目录或种子：
 
 ```bash
-uv run --project isaacsim --no-sync python isaacsim/run.py \
+python backends/isaac_sim/run.py \
   --config configs/isaac_webrtc_preview.json \
   --livestream --livestream-ip 100.95.209.124 \
   --episodes 3 --output data/runs/isaac_webrtc_preview_new
@@ -156,16 +158,16 @@ Isaac Sim 的普通刚体接触传感器不能保证返回软体—刚体接触�
 
 ```bash
 # 至少三个独立物体种子，默认仅学习有效原生标签
-uv run --project mujoco --no-sync python scripts/train_force.py data/runs/mujoco
+uv run --no-sync python scripts/train_force.py data/runs/mujoco
 
 # 从已保存的双相机图像推理，不启动仿真器
-uv run --project mujoco --no-sync python scripts/predict_force.py \
+uv run --no-sync python scripts/predict_force.py \
   --model data/models/force_ridge.npz \
-  --frame data/runs/mujoco/episode_00000000_00000/frame_000052.npz
+  --frame data/runs/backends/mujoco_sim/episode_00000000_00000/frame_000052.npz
 
 # 明确选择估计标签时，仅使用 Isaac 最后半段 hold 帧，投影到世界夹持 X 轴
 # 不与原生法向幅值混为同一个训练目标
-uv run --project isaacsim --no-sync python scripts/train_force.py data/runs/isaacsim \
+python scripts/train_force.py data/runs/isaacsim \
   --target-source estimated --output data/models/isaac_estimated_ridge.npz
 ```
 
@@ -176,9 +178,9 @@ NumPy ridge 是方便检查数据流程的基线，输入仅为双相机图像�
 官方库提供 Robotiq 2F-85/2F-140/Hand-E、Franka Panda 等机器人与夹爪，也有 YCB 日常物体。资产可能位于远程服务器或另外下载的资产包，安装 Python wheel 不等于全部模型已经下载。
 
 ```bash
-uv run --project isaacsim --no-sync python isaacsim/inspect_assets.py --list
-uv run --project isaacsim --no-sync python isaacsim/inspect_assets.py robotiq_2f85 --gui
-uv run --project isaacsim --no-sync python isaacsim/inspect_assets.py panda --export data/generated/panda_reference.usda
+python backends/isaac_sim/inspect_assets.py --list
+python backends/isaac_sim/inspect_assets.py robotiq_2f85 --gui
+python backends/isaac_sim/inspect_assets.py panda --export data/generated/panda_reference.usda
 ```
 
 检查脚本加载真实 USD，列出刚体路径和关节连接，写入 `data/generated/isaac_asset_report.json`。它不会假定不同版本 USD 的指端路径相同。当前采集场景使用共享简化运动学；若要用完整夹爪关节驱动软指，下一步应利用报告中的真实指端连接点建立 attachment/底座位姿映射，并替换当前运动学边界条件，不能仅加载外观模型就声称已完成动力学集成。
@@ -189,7 +191,7 @@ uv run --project isaacsim --no-sync python isaacsim/inspect_assets.py panda --ex
 
 ```bash
 MUJOCO_GL=egl EGL_PLATFORM=surfaceless SOFT_SIM_TEST_RENDER=1 \
-  uv run --project mujoco --no-sync python -m unittest discover -s tests -v
+  uv run --no-sync python -m unittest discover -s tests -v
 ```
 
 测试覆盖真实三种物体接触/形变、左右接触力方向、改变镜头焦距不改变物理状态、双相机 RGB/depth 尺寸与内参、固定局部相机姿态、体网格单位、FEM 估计的刚性不变性/已知拉伸响应，以及基线模型保存/加载。MuJoCo 全流程已实跑。Isaac 仅做源码接口核对、配置/命令行和语法验证；当前沙箱不能访问 GPU，不能声明 GPU 软体仿真或远程 USD 资产已验证。

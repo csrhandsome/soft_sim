@@ -46,7 +46,7 @@ def box(stage, name, center, size, mat, collision=False):
 
 def wood_texture():
     from shared.dataset import write_png
-    out=Path(__file__).resolve().parents[1]/'data/scene_assets/oak_grain.png'
+    out=Path(__file__).resolve().parents[2]/'data/scene_assets/oak_grain.png'
     if not out.exists():
         out.parent.mkdir(parents=True,exist_ok=True)
         rng=np.random.default_rng(7)

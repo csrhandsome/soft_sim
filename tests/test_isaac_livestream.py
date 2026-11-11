@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, ROOT / 'isaacsim' / filename)
+    spec = importlib.util.spec_from_file_location(name, ROOT / 'backends' / 'isaac_sim' / filename)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -125,7 +125,7 @@ class IsaacLivestreamContracts(unittest.TestCase):
         for script in ('run.py', 'inspect_assets.py'):
             for args, message in cases:
                 with self.subTest(script=script, args=args):
-                    result = subprocess.run([sys.executable, str(ROOT / 'isaacsim' / script), *args],
+                    result = subprocess.run([sys.executable, str(ROOT / 'backends' / 'isaac_sim' / script), *args],
                                             env=environment, capture_output=True, text=True, timeout=20)
                     self.assertEqual(result.returncode, 2, result.stderr)
                     self.assertIn(message, result.stderr)

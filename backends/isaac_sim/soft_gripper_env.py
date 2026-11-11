@@ -21,7 +21,7 @@ class IsaacSimGripperEnv(BaseGripperEnv):
         self.mount_ops = []
         self.estimators = []
         self.object_view = None
-        from app_launcher import create_simulation_app
+        from backends.isaac_sim.app_launcher import create_simulation_app
         self.app = create_simulation_app(config.simulation)
         import omni.kit.app
         manager = omni.kit.app.get_app().get_extension_manager()
@@ -102,7 +102,7 @@ class IsaacSimGripperEnv(BaseGripperEnv):
                                                             cfg.material, gravity))
         self._build_object(episode)
         if cfg.simulation.scene_preset != 'plain':
-            from presentation import build_presentation
+            from backends.isaac_sim.presentation import build_presentation
             build_presentation(self)
         rep.orchestrator.set_capture_on_play(False)
         self.camera_ops = []
@@ -151,7 +151,7 @@ class IsaacSimGripperEnv(BaseGripperEnv):
 
     def _build_object(self, episode):
         from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade, PhysxSchema
-        from assets import add_usd_reference
+        from backends.isaac_sim.assets import add_usd_reference
         path = '/World/Object'
         self.object_root = UsdGeom.Xform.Define(self.stage, path)
         r, h = episode.object_radius_m, episode.object_height_m
@@ -236,7 +236,7 @@ class IsaacSimGripperEnv(BaseGripperEnv):
             self.world.render()
 
     def wait_for_close(self):
-        from app_launcher import keep_open
+        from backends.isaac_sim.app_launcher import keep_open
         keep_open(self.app, render=self.world.render)
 
     def get_vertices_world(self):

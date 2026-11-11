@@ -1,0 +1,27 @@
+[project]
+name = "soft-sim"
+version = "0.1.0"
+description = "RoboDojo soft-finger simulation and backend regression tests"
+requires-python = ">=3.12,<3.13"
+dependencies = ["numpy==2.3.4", "scipy==1.16.3", "pillow==11.3.0", "mujoco==4.0.0", "charset-normalizer==3.3.2"]
+
+[tool.uv]
+package = false
+
+[tool.soft-sim.source-repositories.isaaclab]
+url = "https://github.com/yuechen0614/IsaacLab"
+rev = "afca7b09d60d8beb9c1cb28b43066499940b969b"
+path = ".deps/IsaacLab"
+
+[tool.soft-sim.source-repositories.curobo]
+url = "https://github.com/yuechen0614/curobo"
+rev = "d17b54ce32cba095c0b000c4c58777075d11de0e"
+path = ".deps/curobo"
+
+[tool.soft-sim.checkouts.RoboDojo]
+url = "https://github.com/RoboDojo-Benchmark/RoboDojo.git"
+rev = "f57e1633ffed59761bc8e568cfe7530c4b33381c"
+
+[tool.soft-sim.checkouts.RoboTwin]
+url = "https://github.com/RoboTwin-Platform/RoboTwin.git"
+rev = "ea8b21121ebb3cd201ff5b3fe361944ac94eda3f"

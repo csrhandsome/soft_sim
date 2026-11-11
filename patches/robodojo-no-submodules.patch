@@ -1,0 +1,52 @@
+diff --git a/.gitignore b/.gitignore
+index 5bdd55f..31ce080 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -22,3 +22,8 @@ ignore/
+ .cursor/
+ .claude/
+ Untitled
++
++# Dependencies installed through soft_sim TOML manifests.
++/third_party/IsaacLab
++/third_party/curobo
++/XPolicyLab
+diff --git a/.gitmodules b/.gitmodules
+deleted file mode 100644
+index 1491793..0000000
+--- a/.gitmodules
++++ /dev/null
+@@ -1,12 +0,0 @@
+-[submodule "third_party/IsaacLab"]
+-	path = third_party/IsaacLab
+-	url = https://github.com/yuechen0614/IsaacLab.git
+-	branch = main
+-[submodule "third_party/curobo"]
+-	path = third_party/curobo
+-	url = https://github.com/yuechen0614/curobo.git
+-	branch = main
+-[submodule "XPolicyLab"]
+-	path = XPolicyLab
+-	url = https://github.com/XPolicyLab/XPolicyLab.git
+-	branch = main
+diff --git a/XPolicyLab b/XPolicyLab
+deleted file mode 160000
+index 5d0be14..0000000
+--- a/XPolicyLab
++++ /dev/null
+@@ -1 +0,0 @@
+-Subproject commit 5d0be1499634d3176258c8f2e31f5fe816497b0a
+diff --git a/third_party/IsaacLab b/third_party/IsaacLab
+deleted file mode 160000
+index afca7b0..0000000
+--- a/third_party/IsaacLab
++++ /dev/null
+@@ -1 +0,0 @@
+-Subproject commit afca7b09d60d8beb9c1cb28b43066499940b969b
+diff --git a/third_party/curobo b/third_party/curobo
+deleted file mode 160000
+index d17b54c..0000000
+--- a/third_party/curobo
++++ /dev/null
+@@ -1 +0,0 @@
+-Subproject commit d17b54ce32cba095c0b000c4c58777075d11de0e

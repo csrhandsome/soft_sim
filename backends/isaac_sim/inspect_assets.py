@@ -5,9 +5,9 @@ import json
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from assets import CATALOG
-from app_launcher import add_livestream_arguments, configure_visualization, create_simulation_app, keep_open
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from backends.isaac_sim.assets import CATALOG
+from backends.isaac_sim.app_launcher import add_livestream_arguments, configure_visualization, create_simulation_app, keep_open
 from shared.config import ExperimentConfig
 
 
@@ -31,7 +31,7 @@ def main():
     try:
         import omni.usd
         from pxr import Usd, UsdGeom, UsdPhysics
-        from assets import add_usd_reference, resolve_usd_path
+        from backends.isaac_sim.assets import add_usd_reference, resolve_usd_path
         from shared.config import resolve_asset
         omni.usd.get_context().new_stage()
         stage = omni.usd.get_context().get_stage()

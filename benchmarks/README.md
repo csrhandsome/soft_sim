@@ -11,35 +11,16 @@
 | `RoboTwin/.venv` | 3.10.18 | SAPIEN 3.0.0b1、mplib 0.2.1、Torch 2.4.1+cu121、CuRobo v0.7.8 |
 | `RoboDojo/.venv` | 3.11.13 | Isaac Sim 5.1.0、Isaac Lab 0.54.3、Torch 2.7.0、RoboDojo 固定的 CuRobo v2 分支 |
 
-两个 checkout 已克隆；具体提交在 `upstream_versions.json`。
-`robotwin.lock.txt`、`robodojo.lock.txt` 记录本机实际依赖（包含当前绝对 editable 路径）。
-旧 `mujoco/.venv`、`isaacsim/.venv` 和项目 `.uv-cache` 已删除。全局 uv 下载缓存也已清理。
+两个 checkout 的固定提交见根 `pyproject.toml`；Python 安装配置和锁文件分别在 `envs/planning/` 与 `envs/robodojo/`。
+具体安装命令见 [根 README](../README.md)。旧的 pip freeze 文本已由 uv 锁文件替代。
 
-没有调用会更新子模块到远端最新版本的官方安装步骤；保留仓库固定的子模块提交。
-RoboDojo CuRobo 已改为本地 editable 安装，以保留运行需要的 YAML 配置资源；原生 GPU 规划测试得到 41×7 关节轨迹。
-RoboDojo 的 Isaac Lab fork 原先要求 starlette 0.49.1，与 Isaac Sim 5.1 的 0.45.3 冲突；
-只把该 fork 的 `source/isaaclab/setup.py` 约束放宽为 `>=0.45.3,<=0.49.1`。
-两个环境均通过 `uv pip check`。PyTorch3D 未安装；当前使用双 RGB/depth 相机，不涉及其点云训练功能。
+### Git 子模块清理（2026-11-11）
 
-### Git 子模块精简（2026-11-11）
+RoboDojo 与 RoboTwin 均已移除全部子模块登记。IsaacLab 与 RoboDojo CuRobo 使用 `.deps/` 下的固定提交源码快照，通过 TOML editable sources 安装；保持原有 YAML、extension config 与 CUDA 源码可用。
+上游 checkout 的可重放改动保存在 `patches/`，准备脚本会重复执行检查。XPolicyLab 不再作为当前流程的依赖；原工作目录、Git 对象与配置都保存在 `data/backups/`。
 
-当前软夹爪入口不使用策略评测，已在本地停用 RoboTwin 和 RoboDojo 的 `XPolicyLab`，
-并卸载 RoboTwin 环境中对应的 editable 包。保留 RoboDojo 的 `third_party/IsaacLab`、
-`third_party/curobo` 和 RoboTwin 的 `envs/curobo`，供仿真与规划使用。
-上游 `.gitmodules`、固定提交和 `.git/modules/XPolicyLab` 对象库保留，父仓库不产生子模块删除改动。
-`git submodule status` 中 XPolicyLab 前面的 `-` 表示尚未初始化。
-
-`scripts/clone_benchmarks.sh` 默认只初始化仿真依赖；需要策略评测时可恢复：
-
-```bash
-bash scripts/clone_benchmarks.sh all --with-policies
-uv pip install --python RoboTwin/.venv/bin/python --no-deps -e RoboTwin/XPolicyLab
-```
-
-两份 XPolicyLab 完整工作目录、RoboTwin editable 安装文件和清理前配置已备份到
-`data/backups/submodules-20261111-144910/`。清理仅影响策略训练、数据转换和评测入口；
-当前 `benchmarks/check_robotwin.py`、`benchmarks/robodojo_soft_pick.py` 未引用 XPolicyLab。
-手动运行上游安装脚本或无路径限制的 `git submodule update --init --recursive` 仍会重新初始化它。
+IsaacLab 的 Starlette 兼容约束保持 `>=0.45.3,<=0.49.1`，Isaac Sim 仍使用 0.45.3。依赖版本约束来自迁移前环境，避免迁移时升级 CUDA/PyTorch。
+当前流程不使用 PyTorch3D；双 RGB/depth 相机和原有规划流程继续保留。
 
 ## 已下载的资产
 
