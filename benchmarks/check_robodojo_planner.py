@@ -1,8 +1,12 @@
 """GPU smoke test for RoboDojo's own CuRobo planner, stock Franka only."""
 from pathlib import Path
+import argparse
 import json
 import sys
 ROOT = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--output", default="data/runs/robodojo_planner")
+args = parser.parse_args()
 sys.path.insert(0, str(ROOT / "RoboDojo"))
 import numpy as np
 import yaml
@@ -16,7 +20,7 @@ kinematics = config["robot_cfg"]["kinematics"]
 asset_root = ROOT / "RoboTwin/assets/embodiments/franka-panda"
 kinematics["asset_root_path"] = str(asset_root)
 kinematics["urdf_path"] = str(asset_root / "panda.urdf")
-output = ROOT / "data/generated/robodojo_franka_local/curobo.yml"
+output = ROOT / args.output / "curobo.yml"
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(yaml.safe_dump(config, sort_keys=False))
 joints = ["panda_joint" + str(i) for i in range(1, 8)]
@@ -31,7 +35,7 @@ if plan["status"] != "Success":
     raise RuntimeError("RoboDojo CuRobo failed: " + str(plan["status"]))
 report = dict(status=plan["status"], trajectory_shape=list(np.asarray(plan["position"]).shape),
     stock_franka=True, custom_soft_tool_collision_model=False)
-path = ROOT / "data/runs/robodojo_planner"
+path = ROOT / args.output
 path.mkdir(parents=True, exist_ok=True)
 (path / "result.json").write_text(json.dumps(report, indent=2))
 print("PLANNER_RESULT", json.dumps(report), flush=True)

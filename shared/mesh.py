@@ -32,6 +32,54 @@ def load_stl(path, scale=0.001):
     return vertices * scale, faces
 
 
+def refine_surface(vertices, faces, max_edge_m):
+    """Split long edges without moving the STL surface or opening T-junctions.
+
+    Midpoints are shared by both incident triangles. Unlike shading subdivision,
+    this adds geometric vertices that can follow a bending FEM.
+    A zero limit preserves the original topology for baseline comparisons.
+    """
+    if not np.isfinite(max_edge_m) or max_edge_m < 0:
+        raise ValueError("Surface edge limit must be finite and nonnegative")
+    vertices, faces = np.asarray(vertices, dtype=float), np.asarray(faces, dtype=np.int64)
+    if max_edge_m == 0:
+        return vertices.copy(), faces.copy()
+    for _ in range(32):
+        if len(faces) > 1_000_000:
+            raise ValueError("Surface refinement exceeds one million triangles")
+        face_edges = faces[:, [[0, 1], [1, 2], [2, 0]]]
+        edges, inverse = np.unique(np.sort(face_edges.reshape(-1, 2), axis=1), axis=0, return_inverse=True)
+        split = np.linalg.norm(vertices[edges[:, 0]] - vertices[edges[:, 1]], axis=1) > max_edge_m * (1 + 1e-12)
+        if not split.any():
+            return vertices, faces
+        midpoint = np.full(len(edges), -1, dtype=np.int64)
+        midpoint[split] = len(vertices) + np.arange(split.sum())
+        vertices = np.concatenate([vertices, vertices[edges[split]].mean(axis=1)])
+        mids = midpoint[inverse].reshape(-1, 3)
+        refined = []
+        for (a, b, c), (ab, bc, ca) in zip(faces, mids):
+            count = int(ab >= 0) + int(bc >= 0) + int(ca >= 0)
+            if count == 0:
+                refined.append((a, b, c))
+            elif count == 3:
+                refined.extend(((a, ab, ca), (ab, b, bc), (ca, bc, c), (ab, bc, ca)))
+            elif count == 1:
+                if bc >= 0:
+                    a, b, c, ab = b, c, a, bc
+                elif ca >= 0:
+                    a, b, c, ab = c, a, b, ca
+                refined.extend(((a, ab, c), (ab, b, c)))
+            else:
+                # Rotate so AB and BC are split; AC is the unsplit edge.
+                if ab < 0:
+                    a, b, c, ab, bc = b, c, a, bc, ca
+                elif bc < 0:
+                    a, b, c, ab, bc = c, a, b, ca, ab
+                refined.extend(((ab, b, bc), (a, ab, c), (ab, bc, c)))
+        faces = np.asarray(refined, dtype=np.int64)
+    raise ValueError("Surface refinement did not converge")
+
+
 def contains_points(vertices, faces, points):
     """Odd/even ray test; oblique rays avoid the STL's axis-aligned triangle edges."""
     tri = vertices[faces]

@@ -2139,6 +2139,18 @@ wheels = [
 ]
 
 [[package]]
+name = "omegaconf"
+version = "2.4.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "pyyaml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/cc/10/1cabf3188a4d9684a06568c7fd76f9536eede625733c8399cf1f5337b83e/omegaconf-2.4.0.tar.gz", hash = "sha256:7e219a70bea371da250285b9c01c7db027bc421722799c2cc4ff14bc4a2a753b" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/4f/bd/0d9f8247b0819385213d09564eda5c52d3673313c2414d51f72883ec24cd/omegaconf-2.4.0-py3-none-any.whl", hash = "sha256:f141a664c777582405e3cc6e0545ecc79429e79f844995b1a6e71c35946a025c" },
+]
+
+[[package]]
 name = "onnx"
 version = "1.23.2"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -2832,6 +2844,7 @@ dependencies = [
     { name = "isaacsim", extra = ["all", "extscache"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-curobo", extra = ["cu12"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "omegaconf", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "opencv-python-headless", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "pyyaml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -2840,6 +2853,7 @@ dependencies = [
     { name = "starlette", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "torchvision", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "transforms3d", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "trimesh", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
 
@@ -2852,6 +2866,7 @@ requires-dist = [
     { name = "isaacsim", extras = ["all", "extscache"], specifier = "==5.1.0.0" },
     { name = "numpy", specifier = "==1.26.0" },
     { name = "nvidia-curobo", extras = ["cu12"], editable = "../../.deps/curobo" },
+    { name = "omegaconf", specifier = "==2.4.0" },
     { name = "opencv-python-headless", specifier = "==4.11.0.86" },
     { name = "pillow", specifier = "==11.3.0" },
     { name = "pyyaml", specifier = "==6.0.2" },
@@ -2860,6 +2875,7 @@ requires-dist = [
     { name = "starlette", specifier = "==0.45.3" },
     { name = "torch", specifier = "==2.7.0", index = "https://mirrors.aliyun.com/pypi/simple/" },
     { name = "torchvision", specifier = "==0.22.0" },
+    { name = "transforms3d", specifier = "==0.4.2" },
     { name = "trimesh", specifier = "==4.5.1" },
 ]
 
@@ -3027,6 +3043,18 @@ dependencies = [
 sdist = { url = "https://mirrors.aliyun.com/pypi/packages/c4/35/67252acc1b929dc88b6602e8c4a982e64f31e733b804c14bc24b47da35e6/transformers-4.57.6.tar.gz", hash = "sha256:55e44126ece9dc0a291521b7e5492b572e6ef2766338a610b9ab5afbb70689d3" }
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/03/b8/e484ef633af3887baeeb4b6ad12743363af7cce68ae51e938e00aaa0529d/transformers-4.57.6-py3-none-any.whl", hash = "sha256:4c9e9de11333ddfe5114bc872c9f370509198acf0b87a832a0ab9458e2bd0550" },
+]
+
+[[package]]
+name = "transforms3d"
+version = "0.4.2"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/d5/1e/626c2d87c29a35fadc8de5624f4302e1ee56cff380d282d62cb3780e6620/transforms3d-0.4.2.tar.gz", hash = "sha256:e8b5df30eaedbee556e81c6938e55aab5365894e47d0a17615d7db7fd2393680" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/61/7a/f38385f1b2d5f54221baf1db3d6371dc6eef8041d95abff39576c694e9d9/transforms3d-0.4.2-py3-none-any.whl", hash = "sha256:1c70399d9e9473ecc23311fd947f727f7c69ed0b063244828c383aa1aefa5941" },
 ]
 
 [[package]]

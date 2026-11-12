@@ -95,6 +95,7 @@ class SimulationConfig:
     mujoco_dof: str = "trilinear"
     mujoco_cellcount: tuple[int, int, int] = (2, 2, 5)
     solver_iterations: int = 100
+    deformable_vertex_velocity_damping: float | None = None
 
 
 @dataclass
@@ -131,6 +132,8 @@ class ExperimentConfig:
         finite_tree(asdict(self))
         if self.simulation.scene_preset not in ('plain', 'studio', 'workshop', 'kitchen'):
             raise ValueError('Unknown scene preset')
+        if self.simulation.deformable_vertex_velocity_damping is not None and self.simulation.deformable_vertex_velocity_damping < 0:
+            raise ValueError('Deformable vertex velocity damping must be nonnegative')
         if not 0 <= self.simulation.rest_offset_m < self.simulation.contact_offset_m:
             raise ValueError('Require 0 <= rest offset < contact offset')
         if self.object.selection not in ('random', 'cycle'):

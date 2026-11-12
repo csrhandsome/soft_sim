@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+uv_bin="${UV_BIN:-uv}"
+if ! command -v "$uv_bin" >/dev/null 2>&1 && [[ -x "$HOME/.local/bin/uv" ]]; then
+    uv_bin="$HOME/.local/bin/uv"
+fi
 target="${1:-all}"
 if (( $# )); then shift; fi
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY FTP_PROXY http_proxy https_proxy all_proxy ftp_proxy
@@ -15,11 +19,11 @@ case "$target" in
 esac
 for project in "${projects[@]}"; do
     case "$project" in
-        core) uv sync --project "$project_root" "$@" ;;
-        planning) UV_PROJECT_ENVIRONMENT="$project_root/RoboTwin/.venv" uv sync --project "$project_root/envs/planning" --inexact "$@" ;;
+        core) "$uv_bin" sync --locked --project "$project_root" "$@" ;;
+        planning) "$uv_bin" sync --locked --project "$project_root/envs/planning" "$@" ;;
         robodojo)
             python3 "$project_root/scripts/prepare_sources.py" --detach
-            UV_PROJECT_ENVIRONMENT="$project_root/RoboDojo/.venv" uv sync --project "$project_root/envs/robodojo" --inexact "$@"
+            "$uv_bin" sync --locked --project "$project_root/envs/robodojo" "$@"
             ;;
     esac
 done

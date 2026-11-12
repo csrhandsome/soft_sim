@@ -43,6 +43,19 @@ class SharedContracts(unittest.TestCase):
         self.assertEqual(k2[0, 0], 2 * k1[0, 0])
         self.assertEqual(k1[0, 2], k2[0, 2])
 
+    def test_rtx_pinhole_projection_preserves_calibrated_field_of_view(self):
+        from backends.isaac_sim.cameras import pinhole_projection_parameters
+        camera = ExperimentConfig().camera
+        camera.width, camera.height = 256, 192
+        for focal_mm in (.5, 2., 2.8, 3.6, 10.):
+            parameters = pinhole_projection_parameters(camera, focal_mm)
+            self.assertGreaterEqual(parameters['focal_length'], 1.)
+            fx = camera.width * parameters['focal_length'] / parameters['horizontal_aperture']
+            fy = camera.height * parameters['focal_length'] / parameters['vertical_aperture']
+            expected = camera_intrinsics(camera, focal_mm)
+            self.assertAlmostEqual(fx, expected[0, 0])
+            self.assertAlmostEqual(fy, expected[1, 1])
+
     def test_parallel_mount_tilt_is_independent_of_jaw_motion(self):
         config = ExperimentConfig()
         episode = EpisodeSpec.sample(config, 4)

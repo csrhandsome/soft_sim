@@ -9,22 +9,46 @@ from shared.config import resolve_asset
 from shared.geometry import mounted_camera_pose, transform_points
 from shared.mesh import TetMesh, load_stl
 from shared.tool_mount import validate_mount_poses
+from backends.isaac_sim.cameras import configure_pinhole_camera
+
+
+def base_pin_mask(local_nodes, height_m, pitch_m):
+    """Keep the intended support layer despite sub-cell cooking quantization."""
+    tolerance = .01 * pitch_m
+    return local_nodes[:, 2] <= local_nodes[:, 2].min() + height_m + tolerance, tolerance
 
 
 class MountedSoftTool:
     def __init__(self, stage, config, mounts, root="/World/SoftTool", focal_lengths_mm=(2.8, 2.8),
-                 filtered_bodies=()):
+                 filtered_bodies=(), sleep_threshold=0., settling_threshold=0., sleep_damping=None,
+                 max_depenetration_velocity=None, rt_subframes=2, lighting_samples_per_pixel=None,
+                 simulation_resolution=44, surface_max_edge_m=.002, explicit_fem_mesh=False,
+                 self_collision=False):
         from omni.physx.scripts import deformableUtils, physicsUtils
         from pxr import Gf, Sdf, UsdGeom, Vt, PhysxSchema
         self.stage, self.config, self.root = stage, config.validate(), root
+        self.explicit_fem_mesh = explicit_fem_mesh
         self.mounts = validate_mount_poses(mounts)
         self.mesh = TetMesh.load(config.mesh)
         self.pin = self.mesh.vertices[:, 2] <= self.mesh.vertices[:, 2].min() + config.mesh.pin_height_m + 1e-8
         # Let 5.1 cook its legacy simulation/collision topology from the same
         # shared STL. A 6.2 TetMesh is not a portable legacy soft-body asset.
         surface, faces = load_stl(resolve_asset(config.mesh.stl), config.mesh.scale_to_m)
+        self.surface_max_edge_m = surface_max_edge_m
+        self.render_meshes, self.surface_bindings = [], []
+        self.mesh_settings = dict(simulation_hexahedral_resolution=simulation_resolution,
+                                  nominal_simulation_cell_m=float(np.ptp(surface, axis=0).max() / simulation_resolution),
+                                  surface_max_edge_m=surface_max_edge_m,
+                                  collision_source_vertices=len(surface), collision_source_triangles=len(faces))
+        self.mesh_settings.update(physics_mesh_source='explicit_tetrahedra' if explicit_fem_mesh else 'physx_voxel_cooking',
+                                  explicit_mesh_file=config.mesh.tetra_mesh if explicit_fem_mesh else None,
+                                  pin_height_m=config.mesh.pin_height_m, self_collision=self_collision,
+                                  explicit_initialization='authored rest positions and zero velocity before pinning'
+                                  if explicit_fem_mesh else None)
         self.initial, self.paths, self.views, self.camera_ops = [], [], [], []
         self.products, self.annotators = [], []
+        self.camera_projection = []
+        self.render_settings = dict(antialiasing="FXAA", rt_subframes=rt_subframes, motion_blur=False)
         material = root + "/TPU"
         deformableUtils.add_deformable_body_material(stage, material,
             youngs_modulus=config.material.young_modulus_pa, poissons_ratio=config.material.poisson_ratio,
@@ -40,12 +64,24 @@ class MountedSoftTool:
             mesh.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(faces.astype(np.int32).ravel()))
             mesh.CreateSubdivisionSchemeAttr("none")
             mesh.CreateDisplayColorAttr([Gf.Vec3f(.12, .7, .76) if side == 0 else Gf.Vec3f(.92, .54, .20)])
+            explicit = {}
+            if explicit_fem_mesh:
+                # Use the same conforming volume mesh for mechanics and
+                # collision, following SOFA's deformable modelling examples.
+                tetra_points = [Gf.Vec3f(*point) for point in points.tolist()]
+                tetra_indices = self.mesh.tets.astype(np.int32).ravel().tolist()
+                explicit = dict(simulation_rest_points=tetra_points, simulation_indices=tetra_indices,
+                                collision_rest_points=tetra_points, collision_indices=tetra_indices)
             if not deformableUtils.add_physx_deformable_body(stage, path,
-                    simulation_hexahedral_resolution=44,
+                    simulation_hexahedral_resolution=simulation_resolution,
                     collision_simplification=False,
                     solver_position_iteration_count=config.simulation.solver_iterations,
-                    self_collision=False, sleep_threshold=0., settling_threshold=0.):
+                    vertex_velocity_damping=config.simulation.deformable_vertex_velocity_damping,
+                    self_collision=self_collision, sleep_threshold=sleep_threshold,
+                    settling_threshold=settling_threshold, sleep_damping=sleep_damping, **explicit):
                 raise RuntimeError("Could not create legacy PhysX deformable " + path)
+            if max_depenetration_velocity is not None:
+                PhysxSchema.PhysxDeformableAPI(mesh.GetPrim()).CreateMaxDepenetrationVelocityAttr(max_depenetration_velocity)
             collision = PhysxSchema.PhysxCollisionAPI.Apply(mesh.GetPrim())
             collision.CreateContactOffsetAttr(config.simulation.contact_offset_m)
             collision.CreateRestOffsetAttr(config.simulation.rest_offset_m)
@@ -59,12 +95,20 @@ class MountedSoftTool:
         if config.simulation.render:
             import omni.replicator.core as rep
             rep.orchestrator.set_capture_on_play(False)
+            # A moving close-up cage should not depend on a low-resolution
+            # DLSS history from the previous sampled simulation state.
+            rep.settings.set_render_rtx_realtime(antialiasing="FXAA")
+            import carb
+            settings = carb.settings.get_settings()
+            settings.set("/rtx/post/motionblur/enabled", False)
+            for name, path in (("direct_lighting_samples_per_pixel", "/rtx/directLighting/sampledLighting/samplesPerPixel"),
+                               ("reflection_samples_per_pixel", "/rtx/reflections/sampledLighting/samplesPerPixel")):
+                if lighting_samples_per_pixel is not None:
+                    settings.set_int(path, lighting_samples_per_pixel)
+                self.render_settings[name] = settings.get(path)
             for side in (0, 1):
                 camera = UsdGeom.Camera.Define(stage, root + f"/Camera_{side}")
-                camera.CreateFocalLengthAttr(float(focal_lengths_mm[side]) * .01)
-                camera.CreateHorizontalApertureAttr(config.camera.sensor_width_mm * .01)
-                camera.CreateVerticalApertureAttr(config.camera.sensor_width_mm * config.camera.height / config.camera.width * .01)
-                camera.CreateClippingRangeAttr(Gf.Vec2f(config.camera.near_m, config.camera.far_m))
+                self.camera_projection.append(configure_pinhole_camera(camera, config.camera, focal_lengths_mm[side]))
                 self.camera_ops.append(camera.AddTransformOp())
                 product = rep.create.render_product(str(camera.GetPath()), (config.camera.width, config.camera.height))
                 pair = [rep.AnnotatorRegistry.get_annotator(name) for name in ("rgb", "distance_to_image_plane")]
@@ -81,16 +125,58 @@ class MountedSoftTool:
         self.tensor_sim.set_subspace_roots("/")
         self.views = [self.tensor_sim.create_soft_body_view(path) for path in self.paths]
         self.indices, self.targets, self.local_nodes, self.pin_masks = [], [], [], []
+        self._last_target_points = [None, None]
+        self.sim_tets, self.mesh_topology = [], []
         for side, view in enumerate(self.views):
             actual = view.get_sim_nodal_positions()
+            if self.explicit_fem_mesh:
+                # World.reset() advances the initially unpinned body: using
+                # those positions as rest bakes a ~30 um gravity drop into the
+                # clamp and surface embedding. Restore the authored rest state
+                # before installing the base targets. Verify ordering first.
+                actual_tets = view.get_sim_element_indices().cpu().numpy()[0]
+                if actual.shape[1:] != self.initial[side].shape or not np.array_equal(actual_tets, self.mesh.tets):
+                    raise RuntimeError('PhysX reordered the explicit FEM; rest-state restoration needs an index mapping')
+                body_indices = torch.arange(view.count, dtype=torch.int32, device=actual.device)
+                rest_tensor = torch.as_tensor(self.initial[side][None], dtype=actual.dtype, device=actual.device)
+                view.set_sim_nodal_positions(rest_tensor, body_indices)
+                view.set_sim_nodal_velocities(torch.zeros_like(actual), body_indices)
+                actual = view.get_sim_nodal_positions()
             points = actual.cpu().numpy()[0]
             pose = self.mounts[side]
             local = (points - pose[:3, 3]) @ pose[:3, :3]
-            pin = local[:, 2] <= local[:, 2].min() + self.config.mesh.pin_height_m + 1e-7
+            if self.explicit_fem_mesh:
+                local = self.mesh.vertices.copy()
+            # Cooking quantizes the nominal 2 mm lattice. Its second layer can
+            # land a few micrometers above 4 mm; a strict 0.1 um cutoff drops
+            # that entire layer and changes the support with world pose. Allow
+            # 1% of a mesh cell so the intended base layer remains clamped.
+            pin, pin_tolerance = base_pin_mask(local, self.config.mesh.pin_height_m, self.config.mesh.voxel_pitch_m)
             if not np.isfinite(points).all() or not pin.any() or pin.all():
                 raise RuntimeError("Invalid cooked soft-finger mesh or pin selection")
             self.local_nodes.append(local)
             self.pin_masks.append(pin)
+            tets = view.get_sim_element_indices().cpu().numpy()[0].copy()
+            tets = tets[np.all(np.diff(np.sort(tets, axis=1), axis=1) != 0, axis=1)]
+            from scipy.sparse import coo_matrix
+            from scipy.sparse.csgraph import connected_components
+            edges = np.concatenate([tets[:, [0, i]] for i in (1, 2, 3)])
+            graph = coo_matrix((np.ones(len(edges)), (edges[:, 0], edges[:, 1])), shape=(len(local), len(local)))
+            count, labels = connected_components(graph, directed=False)
+            unanchored = ~np.isin(labels, np.unique(labels[pin]))
+            from shared.mesh import tet_volumes
+            element_volumes = tet_volumes(local, tets)
+            source_volume = self.mesh.metadata['stl_volume_m3']
+            self.mesh_topology.append(dict(nodes=len(local), tets=len(tets), components=int(count),
+                                           pinned_nodes=int(pin.sum()), pin_tolerance_m=pin_tolerance,
+                                           effective_pin_height_m=float(np.max(local[pin, 2]) - local[:, 2].min()),
+                                           unanchored_nodes=int(unanchored.sum()),
+                                           reference_volume_m3=float(element_volumes.sum()),
+                                           reference_volume_to_stl_ratio=float(element_volumes.sum() / source_volume),
+                                           minimum_reference_tet_volume_m3=float(element_volumes.min()),
+                                           valid=not bool(unanchored.any()) and bool(np.all(element_volumes > 0))))
+            self.sim_tets.append(tets)
+            print("SOFT_TOOL_TOPOLOGY", side, self.mesh_topology[-1], flush=True)
             self.indices.append(torch.arange(view.count, dtype=torch.int32, device=actual.device))
             targets = view.get_sim_kinematic_targets().clone()
             targets[..., :3] = actual
@@ -99,6 +185,40 @@ class MountedSoftTool:
             self.targets.append(targets)
             print("SOFT_TOOL_MESH", side, "nodes", len(points), "pinned", int(pin.sum()), flush=True)
         self.follow(self.mounts)
+        # The 5.1 cooking process changes node count and ordering.
+        self.reference_state = dict(
+            finger_reference_left=self.local_nodes[0], finger_reference_right=self.local_nodes[1],
+            finger_pin_left=self.pin_masks[0], finger_pin_right=self.pin_masks[1],
+            finger_tets_left=self.sim_tets[0], finger_tets_right=self.sim_tets[1])
+        if self.surface_max_edge_m > 0:
+            from types import SimpleNamespace
+            from backends.isaac_sim.render_surface import bind_surface
+            from pxr import UsdGeom, Vt, Gf
+            for side, path in enumerate(self.paths):
+                cooked = SimpleNamespace(vertices=self.local_nodes[side], tets=self.sim_tets[side])
+                surface, faces, indices, weights = bind_surface(
+                    cooked, self.config.mesh, max_edge_m=self.surface_max_edge_m)
+                UsdGeom.Imageable(self.stage.GetPrimAtPath(path)).CreatePurposeAttr('guide')
+                visual = UsdGeom.Mesh.Define(self.stage, path + '_Surface')
+                visual.CreateFaceVertexCountsAttr([3] * len(faces))
+                visual.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(faces.astype(np.int32).ravel()))
+                visual.CreateSubdivisionSchemeAttr('none')
+                visual.CreateDisplayColorAttr([Gf.Vec3f(.12, .7, .76) if side == 0 else Gf.Vec3f(.92, .54, .20)])
+                self.render_meshes.append(visual)
+                self.surface_bindings.append((indices, weights))
+            self.mesh_settings.update(render_vertices=len(surface), render_triangles=len(faces),
+                                      render_binding='barycentric interpolation of cooked simulation tetrahedra')
+            print('SOFT_TOOL_SURFACE', self.mesh_settings, flush=True)
+            self.sync_render_surface()
+
+    def sync_render_surface(self):
+        """Update display vertices from the current FEM state; never step physics."""
+        if not self.render_meshes:
+            return
+        from pxr import Vt
+        for visual, (indices, weights), points in zip(self.render_meshes, self.surface_bindings, self.positions()):
+            surface = np.einsum('ni,nij->nj', weights, points[indices]).astype(np.float32)
+            visual.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(surface))
 
     def follow(self, mounts):
         import torch
@@ -106,9 +226,15 @@ class MountedSoftTool:
         self.mounts = validate_mount_poses(mounts)
         for side, (view, targets, indices) in enumerate(zip(self.views, getattr(self, "targets", []), getattr(self, "indices", []))):
             pose = self.mounts[side]
-            points = transform_points(self.local_nodes[side], pose[:3, 3], pose[:3, :3])
+            points = transform_points(self.local_nodes[side], pose[:3, 3], pose[:3, :3]).astype(np.float32)
+            # Rewriting identical targets can keep a stationary soft body awake.
+            # Compare the actual float32 target, without a motion deadband: even
+            # the smallest representable mounting movement still reaches PhysX.
+            if np.array_equal(points, self._last_target_points[side]):
+                continue
             targets[..., :3] = torch.as_tensor(points, dtype=targets.dtype, device=targets.device)
             view.set_sim_kinematic_targets(targets, indices)
+            self._last_target_points[side] = points
         for op, pose in zip(self.camera_ops, self.camera_poses):
             usd_pose = pose.copy()
             usd_pose[:3, :3] = usd_pose[:3, :3] @ np.diag([1., -1., -1.])
@@ -121,9 +247,25 @@ class MountedSoftTool:
     def positions(self):
         return [view.get_sim_nodal_positions().cpu().numpy()[0].copy() for view in self.views]
 
-    def capture(self):
+    def collision_positions(self):
+        return [view.get_nodal_positions().cpu().numpy()[0].copy() for view in self.views]
+
+    def capture(self, world):
         import omni.replicator.core as rep
-        rep.orchestrator.step(delta_time=0., pause_timeline=False, wait_for_render=True)
+        before = self.positions()
+        self.sync_render_surface()
+        # Physics-only steps do not flush PhysX/Fabric to the renderer. The
+        # cameras are authored in USD by follow(), so without this refresh they
+        # can see the previous render's finger geometry from the current pose.
+        # World.render() flushes Fabric without advancing physics; a zero-time
+        # Replicator step alone does not perform that flush in Isaac Sim 5.1.
+        world.render()
+        rep.orchestrator.step(rt_subframes=self.render_settings["rt_subframes"],
+                              delta_time=0., pause_timeline=False, wait_for_render=True)
+        after = self.positions()
+        motion = max(float(np.max(np.abs(a - b))) for a, b in zip(after, before))
+        if motion > 1e-7:
+            raise RuntimeError(f"Rendering advanced FEM positions by {motion:g} m during a zero-time capture")
         rgb, depth = [], []
         for color, distance in self.annotators:
             c, d = np.asarray(color.get_data()), np.asarray(distance.get_data())

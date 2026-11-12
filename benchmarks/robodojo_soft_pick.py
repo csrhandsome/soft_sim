@@ -24,10 +24,40 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     add_livestream_arguments(parser)
     parser.add_argument("--gui", action="store_true")
-    parser.add_argument("--mode", choices=("smoke", "pick", "no-contact", "export"), default="pick")
+    parser.add_argument("--closeup", action="store_true", help="Frame the object and soft fingers in the external camera")
+    parser.add_argument("--mode", choices=("smoke", "pick", "squeeze", "no-contact", "export"), default="pick")
+    parser.add_argument("--squeeze-width", type=float, default=.05,
+                        help="Closed width for a stationary squeeze/release test using a grasp plan")
+    parser.add_argument("--elasticity-damping", type=float,
+                        help="Override PhysX elasticity damping (an uncalibrated material parameter)")
+    parser.add_argument("--vertex-velocity-damping", type=float,
+                        help="Artificial FEM nodal velocity damping in 1/s for quasistatic diagnostics")
+    parser.add_argument("--sleep-threshold", type=float, default=0.,
+                        help="FEM sleeping speed threshold in m/s (zero disables sleeping)")
+    parser.add_argument("--settling-threshold", type=float, default=0.,
+                        help="FEM speed threshold for additional settling damping, m/s")
+    parser.add_argument("--sleep-damping", type=float,
+                        help="Additional FEM settling damping in 1/s (unset uses PhysX default)")
+    parser.add_argument("--frozen-render-check", action="store_true",
+                        help="Repeat captures at the end of hold without any physics steps")
+    parser.add_argument("--max-depenetration-velocity", type=float,
+                        help="Limit contact penetration-correction speed for FEM and object, m/s")
+    parser.add_argument("--record-collision-nodes", action="store_true",
+                        help="Also record the actual FEM collision mesh for contact diagnostics")
+    parser.add_argument("--rt-subframes", type=int, default=2,
+                        help="Render subframes at the same physical state per RGB capture")
+    parser.add_argument("--lighting-samples", type=int, choices=(1, 2, 4, 8),
+                        help="RTX direct/reflection samples per pixel; unset keeps renderer defaults")
+    parser.add_argument("--local-physics-origin", action="store_true",
+                        help="Center the squeeze scene on the object to improve float32 FEM coordinate precision")
     parser.add_argument("--arm-control", choices=("kinematic", "drive"), default="kinematic")
     parser.add_argument("--no-cameras", action="store_true")
+    parser.add_argument("--check-mesh-only", action="store_true", help="Save cooked topology and exit before the episode")
+    parser.add_argument("--stop-after-settle", action="store_true", help="Record initialization only, without closing")
     parser.add_argument("--primitive-box", action="store_true", help="Use an analytic box for physics diagnostics")
+    parser.add_argument("--box-size", type=float, nargs=3, default=(.036, .036, .044), metavar=("X", "Y", "Z"),
+                        help="Rigid diagnostic box dimensions in meters")
+    parser.add_argument("--object-mass", type=float, default=.03, help="Dynamic object mass in kilograms")
     parser.add_argument("--object-width", type=float, default=.04, help="USD object width along the closing world-Y axis, meters")
     parser.add_argument("--object-usd", default="RoboDojo/Assets/Object/RoboDojo/Clutter/ball/00000/object.usdz")
     parser.add_argument("--dt", type=float, default=.0005)
@@ -36,13 +66,61 @@ def main():
     parser.add_argument("--adapter-offset", type=float, default=.008)
     parser.add_argument("--render-every", type=int, default=100)
     parser.add_argument("--solver-iterations", type=int, default=200)
+    parser.add_argument("--simulation-resolution", type=int, default=44,
+                        help="PhysX simulation cells along the longest STL axis (44 is about 2 mm)")
+    parser.add_argument("--fem-mesh", help="Explicit shared NPZ tetrahedral mesh for both FEM and collision")
+    parser.add_argument("--pin-height-m", type=float, default=.004,
+                        help="Height of the rigidly prescribed mounting region, meters")
+    parser.add_argument("--self-collision", action="store_true", help="Enable soft-finger internal collision")
+    parser.add_argument("--surface-max-edge-m", type=float, default=.002,
+                        help="Refine display edges and embed them in the FEM; collision geometry is preserved, zero keeps the baseline")
     parser.add_argument("--grasp-plan", help="plan.json from plan_soft_grasp.py; replay its checked joint paths")
+    parser.add_argument("--record-episode", action="store_true",
+                        help="Save synchronized left/right/external RGB, states and MP4s under OUTPUT/recording")
+    parser.add_argument("--video-fps", type=float, default=20., help="RGB sampling and playback rate in simulation time")
     parser.add_argument("--output", default="data/runs/robodojo_soft_pick")
     args = parser.parse_args()
+    if not np.isfinite(args.pin_height_m) or not 0 < args.pin_height_m < .088:
+        parser.error("Pin height must be finite and between 0 and 0.088 m")
+    if args.simulation_resolution < 2 or not np.isfinite(args.surface_max_edge_m) or args.surface_max_edge_m < 0:
+        parser.error("Simulation resolution must be >= 2 and surface edge limit finite and nonnegative")
+    if not all(np.isfinite(x) and .01 <= x <= .15 for x in args.box_size) or not np.isfinite(args.object_mass) or args.object_mass <= 0:
+        parser.error("Box dimensions must be in [0.01, 0.15] m and object mass must be positive")
+    if args.elasticity_damping is not None and (not np.isfinite(args.elasticity_damping) or args.elasticity_damping < 0):
+        parser.error("Elasticity damping must be finite and nonnegative")
+    if args.vertex_velocity_damping is not None and (not np.isfinite(args.vertex_velocity_damping) or args.vertex_velocity_damping < 0):
+        parser.error("Vertex velocity damping must be finite and nonnegative")
+    if any(value is not None and (not np.isfinite(value) or value < 0)
+           for value in (args.sleep_threshold, args.settling_threshold, args.sleep_damping)):
+        parser.error("Sleeping and settling parameters must be finite and nonnegative")
+    if args.sleep_threshold > args.settling_threshold:
+        parser.error("Settling threshold must be at least the sleeping threshold")
+    if args.frozen_render_check and not args.record_episode:
+        parser.error("--frozen-render-check requires --record-episode")
+    if args.record_collision_nodes and not args.record_episode:
+        parser.error("--record-collision-nodes requires --record-episode")
+    if args.max_depenetration_velocity is not None and (not np.isfinite(args.max_depenetration_velocity) or args.max_depenetration_velocity <= 0):
+        parser.error("Maximum depenetration velocity must be positive and finite")
+    if args.rt_subframes < 1:
+        parser.error("Render subframes must be positive")
+    if args.mode == "squeeze" and not args.grasp_plan:
+        parser.error("--mode squeeze requires a plan for the current object")
+    if args.local_physics_origin and args.mode != "squeeze":
+        parser.error("--local-physics-origin is currently validated only for --mode squeeze")
     if not .0001 <= args.dt <= .001 or not 0 <= args.jaw_width <= .08 or args.adapter_offset < 0 or args.render_every < 1 or args.solver_iterations < 1 or not .01 <= args.object_width <= .08:
         parser.error("Invalid dt, width, adapter offset, solver iterations or render stride")
     if args.jaw_width + 2 * args.adapter_offset < .041:
         parser.error("Base separation must exceed 41 mm so the 40 mm finger bases do not overlap")
+    record_stride = 0
+    if args.record_episode:
+        if args.no_cameras or not np.isfinite(args.video_fps) or args.video_fps <= 0:
+            parser.error("--record-episode requires cameras and a positive finite --video-fps")
+        interval_steps = 1 / (args.video_fps * args.dt)
+        record_stride = round(interval_steps)
+        if record_stride < 1 or not np.isclose(interval_steps, record_stride, atol=1e-7, rtol=0):
+            parser.error("--video-fps must divide the physics step rate exactly")
+        if args.mode == "export":
+            parser.error("--record-episode requires a simulated episode, not --mode export")
     grasp_plan = None
     if args.grasp_plan:
         plan_file = ROOT / args.grasp_plan
@@ -53,19 +131,38 @@ def main():
         args.object_width = grasp_plan["scene"]["object_width_m"]
         args.jaw_width = grasp_plan["candidate"]["closed"]
         args.adapter_offset = grasp_plan["scene"]["adapter_offset_m"]
-        if args.primitive_box or args.mode != "pick":
-            parser.error("--grasp-plan requires --mode pick and its original USD object")
+        if args.primitive_box and not grasp_plan["scene"].get("primitive_box", False):
+            parser.error("This plan was generated for a USD object; export and plan the box scene first")
+        args.primitive_box = grasp_plan["scene"].get("primitive_box", False)
+        args.box_size = grasp_plan["scene"].get("object_size_m", args.box_size)
+        args.object_mass = grasp_plan["scene"].get("object_mass_kg", args.object_mass)
+        if args.mode not in ("pick", "squeeze"):
+            parser.error("--grasp-plan requires --mode pick or squeeze")
+        if args.mode == "squeeze":
+            if not np.isfinite(args.squeeze_width) or not args.jaw_width <= args.squeeze_width < grasp_plan["candidate"]["opened"]:
+                parser.error("Squeeze width must be between the planned closed and open widths")
+            args.jaw_width = args.squeeze_width
+    if args.primitive_box:
+        args.object_width = args.box_size[1]
     mount_offset = grasp_plan["scene"]["hand_mount_offset_m"] if grasp_plan else .075
     cfg = ExperimentConfig()
+    cfg.mesh.pin_height_m = args.pin_height_m
+    if args.fem_mesh:
+        cfg.mesh.tetra_mesh = args.fem_mesh
+    if args.elasticity_damping is not None:
+        cfg.material.damping = args.elasticity_damping
     cfg.gripper.profile = "panda"
     cfg.gripper.base_height_m = 0.
     cfg.gripper.open_jaw_width_m = .08
     cfg.gripper.adapter_offset_m = args.adapter_offset
     cfg.simulation.timestep_s = args.dt
     cfg.simulation.solver_iterations = args.solver_iterations
+    cfg.simulation.deformable_vertex_velocity_damping = args.vertex_velocity_damping
     cfg.simulation.contact_offset_m = .00025
     cfg.simulation.render = not args.no_cameras
     cfg.simulation.headless = not args.gui
+    cfg.object.mass_kg = args.object_mass
+    cfg.object.fixed = False
     cfg.camera.width = cfg.camera.height = 256
     configure_visualization(parser, args, cfg.simulation)
     cfg.validate()
@@ -74,8 +171,11 @@ def main():
         raise FileNotFoundError("Run python3 scripts/download_benchmark_assets.py first")
     out = ROOT / args.output
     out.mkdir(parents=True, exist_ok=True)
+    if args.record_episode and (out / "recording").exists():
+        raise FileExistsError(f"Recording already exists: {out / 'recording'}; choose a new --output")
     app = create_simulation_app(cfg.simulation)
     tool = None
+    recorder = None
     try:
         import omni.kit.app
         manager = omni.kit.app.get_app().get_extension_manager()
@@ -97,7 +197,17 @@ def main():
         physics = world.get_physics_context()
         physics.enable_gpu_dynamics(True)
         physics.set_broadphase_type("GPU")
-        world.scene.add_ground_plane()
+        # FEM tensors use world-space float32 positions. Keep the small cage
+        # close to zero without changing any relative geometry or material.
+        # The robot/object/camera stay authored in their original scene frame;
+        # the FEM is authored separately in the translated world frame below.
+        origin_offset = -np.array([.42, -.12, .12 + args.box_size[2] / 2]) if args.local_physics_origin else np.zeros(3)
+        if args.local_physics_origin:
+            scene_root = UsdGeom.Xform.Define(stage, "/World")
+            scene_root.AddTranslateOp().Set(Gf.Vec3d(*origin_offset))
+        # GroundPlane takes a world-space height, unlike the authored table
+        # and object below; its default would leave it above the shifted table.
+        world.scene.add_ground_plane(z_position=float(origin_offset[2]))
         light = UsdLux.DomeLight.Define(stage, "/World/Light")
         light.CreateIntensityAttr(1500.)
         table_z = .12
@@ -144,10 +254,12 @@ def main():
         if args.primitive_box:
             obj = UsdGeom.Cube.Define(stage, "/World/Object/Shape")
             obj.CreateSizeAttr(1.)
-            obj.AddScaleOp().Set(Gf.Vec3f(.036, .036, .044))
+            obj.AddScaleOp().Set(Gf.Vec3f(*args.box_size))
             obj.CreateDisplayColorAttr([Gf.Vec3f(.7, .2, .15)])
             UsdPhysics.CollisionAPI.Apply(obj.GetPrim())
             object_asset = "primitive:box"
+            start[2] = table_z + args.box_size[2] / 2 + .0005
+            UsdGeom.Xformable(obj_root).GetOrderedXformOps()[0].Set(Gf.Vec3d(*start))
         else:
             object_path = ROOT / args.object_usd
             if not object_path.is_file():
@@ -195,19 +307,24 @@ def main():
                 collision.CreateContactOffsetAttr(cfg.simulation.contact_offset_m)
                 collision.CreateRestOffsetAttr(0.)
         rb = UsdPhysics.RigidBodyAPI.Apply(obj_root.GetPrim())
+        if args.max_depenetration_velocity is not None:
+            PhysxSchema.PhysxRigidBodyAPI.Apply(obj_root.GetPrim()).CreateMaxDepenetrationVelocityAttr(args.max_depenetration_velocity)
         if args.mode == "no-contact":
             rb.CreateKinematicEnabledAttr(True)
-        UsdPhysics.MassAPI.Apply(obj_root.GetPrim()).CreateMassAttr(.03)
+        UsdPhysics.MassAPI.Apply(obj_root.GetPrim()).CreateMassAttr(args.object_mass)
         mat = UsdShade.Material.Define(stage, "/World/ObjectMaterial")
         pm = UsdPhysics.MaterialAPI.Apply(mat.GetPrim())
         pm.CreateStaticFrictionAttr(1.)
         pm.CreateDynamicFrictionAttr(1.)
         UsdShade.MaterialBindingAPI.Apply(obj.GetPrim()).Bind(mat, materialPurpose="physics")
         object_view = world.scene.add(SingleRigidPrim(prim_path="/World/Object", name="object"))
+        # start and FK below are world-space; authored object transforms above
+        # remain in the source scene frame inherited from /World.
+        start = start + origin_offset
         kin = LulaKinematicsSolver(**load_supported_lula_kinematics_solver_config("Franka"))
-        kin.set_robot_base_pose(base, np.array([1., 0., 0., 0.]))
+        kin.set_robot_base_pose(base + origin_offset, np.array([1., 0., 0., 0.]))
         q = np.array([0., -.5, 0., -2.2, 0., 1.8, .8])
-        hand = np.array([.42, -.12, .44])
+        hand = np.array([.42, -.12, .44]) + origin_offset
         def solve(target):
             nonlocal q
             q, ok = kin.compute_inverse_kinematics("panda_hand", np.asarray(target),
@@ -223,6 +340,10 @@ def main():
         if grasp_plan:
             q = np.array(grasp_plan["initial_q"][:7])
             initial_width = float(sum(grasp_plan["initial_q"][-2:]))
+            if args.mode == "squeeze":
+                with np.load(plan_file.parent / grasp_plan["trajectory_file"]) as planned_paths:
+                    q = planned_paths["approach"][-1].copy()
+                initial_width = grasp_plan["candidate"]["opened"]
         else:
             solve(hand)
             initial_width = .08
@@ -232,14 +353,21 @@ def main():
             count = 0
             cache = UsdGeom.XformCache(Usd.TimeCode.Default())
             for child in Usd.PrimRange(obj_root.GetPrim()):
-                if not child.IsA(UsdGeom.Mesh):
+                if not child.IsA(UsdGeom.Mesh) and not child.IsA(UsdGeom.Cube):
                     continue
-                mesh = UsdGeom.Mesh(child)
-                points = np.asarray(mesh.GetPointsAttr().Get(), dtype=float)
+                if child.IsA(UsdGeom.Cube):
+                    import trimesh
+                    cube = trimesh.creation.box(extents=[UsdGeom.Cube(child).GetSizeAttr().Get()] * 3)
+                    points = np.asarray(cube.vertices)
+                    counts = np.full(len(cube.faces), 3)
+                    indices = np.asarray(cube.faces).ravel()
+                else:
+                    mesh = UsdGeom.Mesh(child)
+                    points = np.asarray(mesh.GetPointsAttr().Get(), dtype=float)
+                    counts = np.asarray(mesh.GetFaceVertexCountsAttr().Get(), dtype=int)
+                    indices = np.asarray(mesh.GetFaceVertexIndicesAttr().Get(), dtype=int)
                 matrix = np.asarray(cache.GetLocalToWorldTransform(child))
                 points = (np.c_[points, np.ones(len(points))] @ matrix)[:, :3]
-                counts = np.asarray(mesh.GetFaceVertexCountsAttr().Get(), dtype=int)
-                indices = np.asarray(mesh.GetFaceVertexIndicesAttr().Get(), dtype=int)
                 cursor = 0
                 for length in counts:
                     face = indices[cursor:cursor+length]
@@ -250,6 +378,8 @@ def main():
                 count += len(points)
             np.savez_compressed(out / "object_geometry.npz", vertices=np.concatenate(vertices), faces=np.asarray(triangles))
             metadata = dict(object_asset=object_asset, object_width_m=args.object_width,
+                primitive_box=args.primitive_box, object_size_m=list(args.box_size) if args.primitive_box else (size * scale).tolist(),
+                object_mass_kg=args.object_mass,
                 initial_object_position=start.tolist(), table_z=table_z,
                 initial_q=np.r_[q, .04, .04].tolist(), hand_mount_offset_m=.075,
                 adapter_offset_m=args.adapter_offset, finger_mesh=cfg.mesh.stl)
@@ -257,11 +387,54 @@ def main():
             print("GEOMETRY_EXPORTED", str(out), flush=True)
             return
         tool = MountedSoftTool(stage, cfg, mount_frames(hand, measured_r, initial_width),
+            root="/SoftTool" if args.local_physics_origin else "/World/SoftTool",
+            sleep_threshold=args.sleep_threshold, settling_threshold=args.settling_threshold,
+            sleep_damping=args.sleep_damping,
+            max_depenetration_velocity=args.max_depenetration_velocity,
+            rt_subframes=args.rt_subframes, lighting_samples_per_pixel=args.lighting_samples,
+            simulation_resolution=args.simulation_resolution, surface_max_edge_m=args.surface_max_edge_m,
+            explicit_fem_mesh=bool(args.fem_mesh), self_collision=args.self_collision,
             filtered_bodies=[body_paths[name] for name in ("panda_hand", "panda_link7") if name in body_paths])
         task_camera = UsdGeom.Camera.Define(stage, "/World/TaskCamera")
         task_camera.CreateClippingRangeAttr(Gf.Vec2f(.01, 20.))
+        eye, target = ((.78, -.48, .48), (.42, -.12, .23)) if args.closeup else ((1.05, -1.15, .92), (.25, 0., .32))
         task_camera.AddTransformOp().Set(Gf.Matrix4d().SetLookAt(
-            Gf.Vec3d(1.05, -1.15, .92), Gf.Vec3d(.25, 0., .32), Gf.Vec3d(0., 0., 1.)).GetInverse())
+            Gf.Vec3d(*eye), Gf.Vec3d(*target), Gf.Vec3d(0., 0., 1.)).GetInverse())
+        if args.record_episode:
+            import omni.replicator.core as rep
+            from episode_recording import EpisodeRecorder
+            external_size = (640, 480)
+            external_focal = 35. if args.closeup else 18.
+            task_camera.CreateFocalLengthAttr(external_focal)
+            task_camera.CreateHorizontalApertureAttr(24.)
+            task_camera.CreateVerticalApertureAttr(18.)
+            external_product = rep.create.render_product(str(task_camera.GetPath()), external_size)
+            external_rgb = rep.AnnotatorRegistry.get_annotator("rgb")
+            external_rgb.attach([external_product])
+            external_pose = np.asarray(UsdGeom.XformCache().GetLocalToWorldTransform(task_camera.GetPrim())).T.copy()
+            external_pose[:3, :3] = external_pose[:3, :3] @ np.diag([1., -1., -1.])
+            calibration = dict(
+                finger_intrinsics=np.stack([camera_intrinsics(cfg.camera, 2.8)] * 2).tolist(),
+                external_intrinsics=[[640. * external_focal / 24., 0., 320.],
+                                     [0., 480. * external_focal / 18., 240.], [0., 0., 1.]],
+                external_camera_to_world=external_pose.tolist(),
+                finger_resolution=[cfg.camera.width, cfg.camera.height],
+                finger_projection=tool.camera_projection,
+                rendering=tool.render_settings,
+                deformable_mesh=tool.mesh_settings,
+                deformable_dynamics=dict(material=cfg.to_dict()["material"],
+                    vertex_velocity_damping_override_s_inv=cfg.simulation.deformable_vertex_velocity_damping,
+                    solver_position_iterations=args.solver_iterations,
+                    sleep_threshold_m_s=args.sleep_threshold, settling_threshold_m_s=args.settling_threshold,
+                    sleep_damping_override_s_inv=args.sleep_damping,
+                    max_depenetration_velocity_override_m_s=args.max_depenetration_velocity,
+                    damping_calibrated=False),
+                world_origin_offset_m=origin_offset.tolist(),
+                external_resolution=list(external_size), physics_dt_s=args.dt,
+                collision_nodes_recorded=args.record_collision_nodes,
+                rigid_object_max_depenetration_velocity_override_m_s=args.max_depenetration_velocity,
+                record_stride=record_stride, grasp_plan=str(plan_file) if grasp_plan else None)
+            recorder = EpisodeRecorder(out / "recording", args.video_fps, calibration)
         from omni.kit.viewport.utility import get_active_viewport
         viewport = get_active_viewport()
         if viewport:
@@ -274,6 +447,14 @@ def main():
                                                      kds=torch.full((9,), 150., device="cuda:0"))
         robot.get_articulation_controller().apply_action(ArticulationAction(joint_positions=q9))
         tool.initialize()
+        np.savez_compressed(out / "finger_reference.npz", **tool.reference_state)
+        (out / "mesh_topology.json").write_text(json.dumps(tool.mesh_topology, indent=2))
+        if not all(row["valid"] for row in tool.mesh_topology):
+            raise RuntimeError("Cooked FEM contains nodes disconnected from the pinned base; see mesh_topology.json")
+        if args.check_mesh_only:
+            return
+        if recorder is not None:
+            np.savez_compressed(out / "recording/finger_reference.npz", **tool.reference_state)
         pick = start + [0., 0., mount_offset + .073]
         # Keep the complete 88.18 mm STL tip above the table. Short objects
         # cannot use the same center-based grasp height as tall ones.
@@ -299,10 +480,20 @@ def main():
                 ("probe_lift", 1.5, probe, closed),
                 ("lift", max(2.,(len(lift)-1)*grasp_plan["sample_dt_s"]), lift, closed),
                 ("verify_hold", 1., still(lift[-1]), closed)]
+            if args.mode == "squeeze":
+                # Initialize at the checked, open final approach pose. Keep
+                # the arm stationary to isolate contact deformation and decay.
+                phases = [("settle", 1., still(q), opened),
+                          ("close", 3., still(q), args.squeeze_width),
+                          ("hold", 2., still(q), args.squeeze_width),
+                          ("release", 3., still(q), opened),
+                          ("settle_release", 1., still(q), opened)]
         if args.mode == "smoke":
             phases = phases[:1]
         elif args.mode == "no-contact":
             phases = phases[:5]
+        if args.stop_after_settle:
+            phases = phases[:1]
         samples, max_lift, initial_z, sim_step = [], 0., None, 0
         last_pos, last_width = hand.copy(), initial_width
         for name, duration, goal, width in phases:
@@ -335,6 +526,7 @@ def main():
                 world.step(render=False)
                 sim_step += 1
                 if sim_step % args.render_every == 0:
+                    tool.sync_render_surface()
                     world.render()
                     points = tool.positions()
                     if any(not np.isfinite(p).all() or np.max(np.abs(p)) > 5 for p in points):
@@ -347,20 +539,68 @@ def main():
                     samples.append(dict(time_s=sim_step * args.dt, phase=name, object_position=pose.tolist(),
                         hand_position=hand.tolist(), width_parameter_m=jaw, base_separation_m=jaw+2*args.adapter_offset,
                         max_displacement_mm=float(max(np.linalg.norm(p-r, axis=-1).max() for p,r in zip(points,rest))*1000)))
+                if recorder is not None and sim_step % record_stride == 0:
+                    # Flush the current physics state before the zero-time
+                    # Replicator step renders all three products.
+                    # Read the external annotator before any further physics step.
+                    rgb, depth = tool.capture(world)
+                    external = np.asarray(external_rgb.get_data())[..., :3].astype(np.uint8).copy()
+                    object_position, object_orientation = object_view.get_world_pose()
+                    recorded_nodes = tool.positions()
+                    collision_state = {}
+                    if args.record_collision_nodes:
+                        collision_nodes = tool.collision_positions()
+                        collision_state = dict(finger_collision_nodes_left=collision_nodes[0],
+                                               finger_collision_nodes_right=collision_nodes[1])
+                    recorder.append(rgb[0], rgb[1], external, time_s=sim_step * args.dt, phase=name,
+                        joint_positions=robot.get_joint_positions().cpu().numpy(),
+                        joint_velocities=robot.get_joint_velocities().cpu().numpy(),
+                        commanded_joint_positions=q9.cpu().numpy(),
+                        object_position=object_position.cpu().numpy(),
+                        object_orientation_wxyz=object_orientation.cpu().numpy(),
+                        width_parameter_m=jaw, finger_camera_to_world=tool.camera_poses,
+                        finger_depth_m=depth,
+                        finger_nodes_left=recorded_nodes[0], finger_nodes_right=recorded_nodes[1],
+                        finger_mounts=tool.mounts, **collision_state)
             pose, _ = object_view.get_world_pose()
             print("CHECKPOINT", name, "object", pose.tolist(), "hand", hand.tolist(), flush=True)
+            # A cheap mechanics checkpoint also works without RGB cameras,
+            # enabling isolated clamp/mesh comparisons before a full recording.
+            checkpoint_nodes = tool.positions()
+            if any(not np.isfinite(nodes).all() for nodes in checkpoint_nodes):
+                raise RuntimeError("Non-finite FEM state at phase " + name)
+            np.savez_compressed(out / (name + '_fem.npz'),
+                time_s=sim_step * args.dt, finger_mounts=tool.mounts,
+                finger_nodes_left=checkpoint_nodes[0], finger_nodes_right=checkpoint_nodes[1],
+                object_position=pose.cpu().numpy())
             if name == "settle":
                 initial_z = float(pose[2])
             if not grasp_plan and np.linalg.norm(hand-goal) > .025:
                 raise RuntimeError("Arm tracking error after " + name)
             (out / "trajectory.json").write_text(json.dumps(samples, indent=2))
             if cfg.simulation.render and name in ("settle", "hold", "transfer", "settle_place", "verify_hold"):
-                rgb, depth = tool.capture()
+                rgb, depth = tool.capture(world)
                 np.savez_compressed(out / (name+"_cameras.npz"), rgb=rgb, depth_m=depth,
                     intrinsics=np.stack([camera_intrinsics(cfg.camera, 2.8)]*2), camera_to_world=tool.camera_poses)
                 from shared.dataset import write_png
                 write_png(out / (name+"_left.png"), rgb[0])
                 write_png(out / (name+"_right.png"), rgb[1])
+            if args.frozen_render_check and name in ("hold", "verify_hold"):
+                from benchmarks.check_frozen_render import probe
+                def frozen_capture():
+                    images, _ = tool.capture(world)
+                    return dict(left_rgb=images[0], right_rgb=images[1],
+                                external_rgb=np.asarray(external_rgb.get_data())[..., :3].astype(np.uint8).copy())
+                def frozen_state():
+                    pos, rot = object_view.get_world_pose()
+                    nodes = tool.positions()
+                    return dict(time_s=np.asarray(world.current_time),
+                        finger_nodes_left=nodes[0], finger_nodes_right=nodes[1],
+                        finger_mounts=tool.mounts.copy(), finger_camera_to_world=tool.camera_poses.copy(),
+                        joint_positions=robot.get_joint_positions().cpu().numpy().copy(),
+                        object_position=pos.cpu().numpy().copy(), object_orientation=rot.cpu().numpy().copy())
+                report = probe(frozen_capture, frozen_state, out / (name + "_frozen_render"))
+                print("FROZEN_RENDER", json.dumps(report), flush=True)
             last_pos, last_width = goal.copy(), width
             if grasp_plan and name == "probe_lift" and float(pose[2])-initial_z < .005:
                 print("GRASP_REJECTED", "Object did not follow the 12 mm probe lift", flush=True)
@@ -373,25 +613,39 @@ def main():
         held = [sample for sample in samples if sample["phase"] == "verify_hold"]
         min_held_lift = min(sample["object_position"][2]-initial_z for sample in held) if held else None
         hold_duration = next((duration for phase,duration,_,_ in phases if phase=="verify_hold"),0.) if held else 0.
+        squeeze = args.mode == "squeeze"
         result = dict(mode=args.mode, arm_control=args.arm_control, robot_asset=str(asset),
-            object_asset=object_asset, isaacsim_version="5.1.0", max_lift_m=max_lift, final_position=final.tolist(), final_xy_error_m=xy_error,
+            world_origin_offset_m=origin_offset.tolist(),
+            fem_settling=dict(sleep_threshold_m_s=args.sleep_threshold,
+                settling_threshold_m_s=args.settling_threshold, sleep_damping_override_s_inv=args.sleep_damping),
+            contact_solver=dict(max_depenetration_velocity_override_m_s=args.max_depenetration_velocity,
+                                applies_to=["soft_fingers", "rigid_object"]),
+            deformable_mesh=tool.mesh_settings,
+            object_asset=object_asset, object_mass_kg=args.object_mass,
+            object_size_m=list(args.box_size) if args.primitive_box else None,
+            isaacsim_version="5.1.0", max_lift_m=max_lift, final_position=final.tolist(), final_xy_error_m=xy_error,
             target_xy_m=target_xy.tolist(), initial_object_z_m=initial_z,
             final_lift_m=float(final[2]-initial_z), min_held_lift_m=min_held_lift,
             verified_hold_duration_s=hold_duration,
-            success=bool(max_lift > .06 and ((min_held_lift is not None and min_held_lift > .06 and xy_error < .035)
+            success=None if squeeze else bool(max_lift > .06 and ((min_held_lift is not None and min_held_lift > .06 and xy_error < .035)
                 if grasp_plan else (args.mode == "pick" and xy_error < .035 and abs(final[2]-start[2]) < .015))),
             grasp_plan=str(plan_file) if grasp_plan else None,
-            task="grasp_and_hold_after_lift" if grasp_plan else "pick_and_place",
+            task="initialization_check" if args.stop_after_settle else ("stationary_squeeze_release" if squeeze else ("grasp_and_hold_after_lift" if grasp_plan else "pick_and_place")),
             coupling="one-way prescribed FEM base nodes; arm does not receive FEM reaction torque",
             planner=grasp_plan["planner"] if grasp_plan else "Lula IK with clear-table scripted waypoints; no collision-aware trajectory planner in this demo",
             official_benchmark_evaluation=False, config=cfg.to_dict())
         (out / "result.json").write_text(json.dumps(result, indent=2))
+        if recorder is not None:
+            recorder.close(complete=True, result={k: v for k, v in result.items() if k != "config"})
+            print("EPISODE_VIDEO", str(out / "recording/episode.mp4"), "frames", len(recorder.rows), flush=True)
         print("RESULT", json.dumps({k:v for k,v in result.items() if k != "config"}), flush=True)
     except Exception:
         import traceback
         traceback.print_exc()
         raise
     finally:
+        if recorder is not None:
+            recorder.close()
         # Closing Kit owns the render graph teardown. Detaching shared
         # annotator graphs manually during Kit shutdown is broken in 5.1.
         app.close()

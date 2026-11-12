@@ -7,10 +7,16 @@
       "-fa431ecd893ee706883e64fe5fe1464ec8cd928d XPolicyLab"
     ],
     "submodules": [],
-    "checkout_patch": "patches/robotwin-no-submodules.patch",
     "dependency_management": {
       "manifest": "envs/planning/pyproject.toml",
       "lock": "envs/planning/uv.lock"
+    },
+    "historical_checkout_patch": "patches/robotwin-no-submodules.patch",
+    "source_management": {
+      "kind": "pinned archive snapshot",
+      "manifest": "pyproject.toml",
+      "marker": "RoboTwin/.soft-sim-source.json",
+      "git_metadata": false
     }
   },
   "RoboDojo": {
@@ -23,13 +29,19 @@
       " d17b54ce32cba095c0b000c4c58777075d11de0e third_party/curobo (remotes/origin/isaacsim-warp18)"
     ],
     "submodules": [],
-    "checkout_patch": "patches/robodojo-no-submodules.patch",
     "dependency_management": {
       "manifest": "envs/robodojo/pyproject.toml",
       "lock": "envs/robodojo/uv.lock",
       "isaaclab": ".deps/IsaacLab",
       "curobo": ".deps/curobo",
       "installation": "editable source snapshots without git metadata"
+    },
+    "historical_checkout_patch": "patches/robodojo-no-submodules.patch",
+    "source_management": {
+      "kind": "pinned archive snapshot",
+      "manifest": "pyproject.toml",
+      "marker": "RoboDojo/.soft-sim-source.json",
+      "git_metadata": false
     }
   },
   "validation": {

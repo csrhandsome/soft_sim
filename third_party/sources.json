@@ -1,0 +1,49 @@
+{
+  "repositories": [
+    {
+      "path": "third_party/SoftRobots",
+      "url": "https://github.com/SofaDefrost/SoftRobots.git",
+      "commit": "3dadbaff9f50b379bf1cc680b379b74810751ee0",
+      "shallow": true,
+      "recursive_submodules": false
+    },
+    {
+      "path": "third_party/STLIB",
+      "url": "https://github.com/SofaDefrost/STLIB.git",
+      "commit": "75f24c4295edf9244a2b3160f64f65a73868a89c",
+      "shallow": true,
+      "recursive_submodules": false
+    },
+    {
+      "path": "third_party/diff_pd_public",
+      "url": "https://github.com/mit-gfx/diff_pd_public.git",
+      "commit": "1594aa07a6983ff9a9c107e9f0d83d07fa99c8d1",
+      "shallow": true,
+      "recursive_submodules": false
+    },
+    {
+      "path": "third_party/diffPD_sim2real",
+      "url": "https://github.com/srl-ethz/diffPD_sim2real.git",
+      "commit": "825e7b7c4638d18f0b35707eb192bedf955a7157",
+      "shallow": true,
+      "recursive_submodules": false
+    },
+    {
+      "path": "third_party/somo",
+      "url": "https://github.com/GrauleM/somo.git",
+      "commit": "feaea3fe4df754ca51bc56891185fe8e80d00469",
+      "shallow": true,
+      "recursive_submodules": false
+    }
+  ],
+  "unlocated_code": [
+    {
+      "project": "Fin-QD",
+      "paper": "https://arxiv.org/abs/2311.12477"
+    },
+    {
+      "project": "Vision-based Force Estimation Using Deformable Grippers",
+      "paper": "https://rave.ohiolink.edu/etdc/view?acc_num=case1718120033936051"
+    }
+  ]
+}

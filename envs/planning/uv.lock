@@ -359,6 +359,15 @@ wheels = [
 ]
 
 [[package]]
+name = "setuptools"
+version = "69.5.1"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d6/4f/b10f707e14ef7de524fe1f8988a294fb262a29c9b5b12275c7e188864aed/setuptools-69.5.1.tar.gz", hash = "sha256:6c1fccdac05a97e598fb0ae3bbed5904ccb317337a51139dcd51453611bbb987", size = 2291314, upload-time = "2024-04-13T21:06:28.589Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f7/29/13965af254e3373bceae8fb9a0e6ea0d0e571171b80d6646932131d6439b/setuptools-69.5.1-py3-none-any.whl", hash = "sha256:c636ac361bc47580504644275c9ad802c50415c7522212252c033bd15f301f32", size = 894566, upload-time = "2024-04-13T21:06:23.256Z" },
+]
+
+[[package]]
 name = "six"
 version = "1.17.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -380,6 +389,7 @@ dependencies = [
     { name = "rtree", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "sapien", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "scipy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "setuptools", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "transforms3d", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "trimesh", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
@@ -394,6 +404,7 @@ requires-dist = [
     { name = "rtree", specifier = "==1.4.1" },
     { name = "sapien", specifier = "==3.0.0b1" },
     { name = "scipy", specifier = "==1.10.1" },
+    { name = "setuptools", specifier = "==69.5.1" },
     { name = "transforms3d", specifier = "==0.4.2" },
     { name = "trimesh", specifier = "==4.4.3" },
 ]

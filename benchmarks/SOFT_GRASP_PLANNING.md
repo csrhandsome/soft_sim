@@ -11,7 +11,7 @@
 - 当前仅一件物体、一次成功运行，尚无跨物体/随机种子成功率统计。
 
 原始结果与轨迹：`data/runs/soft_planned_grasp_55/`。
-可独立复核：`RoboDojo/.venv/bin/python benchmarks/validate_grasp_run.py`。
+可独立复核：`envs/robodojo/.venv/bin/python benchmarks/validate_grasp_run.py`。
 `validation.json` 是从保存的原始轨迹及相机文件重算的检查结果。
 `plan.json` 记录实际执行轨迹和 URDF/STL 的校验和。
 
@@ -74,20 +74,20 @@ TCP 在掌部前方 130 mm，预抓取开口参数 80 mm、闭合参数 27 mm（
 
 ```bash
 # 导出相同场景的物体真实网格和初始关节；不启动软体长时间仿真
-OMNI_KIT_ACCEPT_EULA=YES RoboDojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
+OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
   --mode export --output data/generated/soft_grasp_scene
 
 # 生成候选、适配 URDF、RRT/直线接近/试提/携带物体提起轨迹
-RoboTwin/.venv/bin/python benchmarks/plan_soft_grasp.py \
+envs/planning/.venv/bin/python benchmarks/plan_soft_grasp.py \
   --contact-height .055 --output data/generated/soft_grasp_plan_55
 
 # 用真正的 PhysX FEM 软指执行；物体没有绑定或吸附到机器人
-OMNI_KIT_ACCEPT_EULA=YES RoboDojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
+OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
   --grasp-plan data/generated/soft_grasp_plan_55/plan.json \
   --dt .001 --solver-iterations 80 --output data/runs/soft_planned_grasp_55
 
 # 检查规划模型与仿真的安装坐标一致
-RoboTwin/.venv/bin/python benchmarks/test_soft_grasp_frames.py
+envs/planning/.venv/bin/python benchmarks/test_soft_grasp_frames.py
 ```
 
 试提时物体必须跟随上升至少 5 mm，否则执行器记录 `GRASP_REJECTED`，停止后续动作。

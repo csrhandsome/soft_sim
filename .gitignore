@@ -24,6 +24,7 @@ MUJOCO_LOG.TXT
 build/
 dist/
 *.egg-info/
+data/generated/
 
 # Downloaded scene assets and generated runs stay local. Keep the reference mesh.
 /data/scene_assets/
@@ -31,3 +32,6 @@ dist/
 
 # TOML-managed third-party source snapshots.
 /.deps/
+
+# Reference repositories are cloned locally; track their manifest and notes.
+/third_party/*/

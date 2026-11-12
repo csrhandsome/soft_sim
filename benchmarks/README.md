@@ -8,16 +8,17 @@
 
 | 目录 | Python | 核心组件 |
 |---|---|---|
-| `RoboTwin/.venv` | 3.10.18 | SAPIEN 3.0.0b1、mplib 0.2.1、Torch 2.4.1+cu121、CuRobo v0.7.8 |
-| `RoboDojo/.venv` | 3.11.13 | Isaac Sim 5.1.0、Isaac Lab 0.54.3、Torch 2.7.0、RoboDojo 固定的 CuRobo v2 分支 |
+| `envs/planning/.venv` | 3.10.18 | SAPIEN 3.0.0b1、mplib 0.2.1（本项目软夹爪规划） |
+| `envs/robodojo/.venv` | 3.11.13 | Isaac Sim 5.1.0、Isaac Lab 0.54.3、Torch 2.7.0、RoboDojo 固定的 CuRobo v2 分支 |
 
-两个 checkout 的固定提交见根 `pyproject.toml`；Python 安装配置和锁文件分别在 `envs/planning/` 与 `envs/robodojo/`。
-具体安装命令见 [根 README](../README.md)。旧的 pip freeze 文本已由 uv 锁文件替代。
+两个源码快照的固定提交见根 `pyproject.toml`；Python 安装配置和锁文件分别在 `envs/planning/` 与 `envs/robodojo/`。
+具体安装命令见 [根 README](../README.md)。旧的 pip freeze 文本已由 uv 锁文件替代。默认精确同步；旧源码目录内的 `.venv` 保留供回退，当前命令使用 `envs/` 下的新环境。
+规划环境不包含上游策略评测、语言描述生成、训练等额外依赖；当前验证范围为下文的机器人资产、规划器、相机与软指流程。
 
 ### Git 子模块清理（2026-11-11）
 
 RoboDojo 与 RoboTwin 均已移除全部子模块登记。IsaacLab 与 RoboDojo CuRobo 使用 `.deps/` 下的固定提交源码快照，通过 TOML editable sources 安装；保持原有 YAML、extension config 与 CUDA 源码可用。
-上游 checkout 的可重放改动保存在 `patches/`，准备脚本会重复执行检查。XPolicyLab 不再作为当前流程的依赖；原工作目录、Git 对象与配置都保存在 `data/backups/`。
+四个上游源码目录均为普通快照，不含嵌套 `.git` 或 `.gitmodules`。准备脚本下载固定提交归档，并通过 `.soft-sim-source.json` 识别已有快照。历史移除补丁保留在 `patches/`。XPolicyLab 不再作为当前流程的依赖；历史源码、补丁和迁移记录保留在 `data/backups/`；用户随后要求删除多余 Git，历史备份中的 Git 元数据也已清理。后续按新要求 clone 到根 `third_party/` 的参考项目保留 Git，见 [源码清单](../third_party/README.md)。
 
 IsaacLab 的 Starlette 兼容约束保持 `>=0.45.3,<=0.49.1`，Isaac Sim 仍使用 0.45.3。依赖版本约束来自迁移前环境，避免迁移时升级 CUDA/PyTorch。
 当前流程不使用 PyTorch3D；双 RGB/depth 相机和原有规划流程继续保留。
@@ -47,25 +48,25 @@ clone 仓库不等于下载所有资产；当前没有下载全量任务、训�
 
 ```bash
 # SAPIEN + 原生 RoboTwin Franka + mplib 真实轨迹规划 + 相机渲染
-RoboTwin/.venv/bin/python benchmarks/check_robotwin.py
+envs/planning/.venv/bin/python benchmarks/check_robotwin.py
 
 # RoboDojo Franka、球体、木纹桌面 + shared 软指与双相机
-OMNI_KIT_ACCEPT_EULA=YES RoboDojo/.venv/bin/python benchmarks/robodojo_soft_pick.py --mode smoke
-OMNI_KIT_ACCEPT_EULA=YES RoboDojo/.venv/bin/python benchmarks/robodojo_soft_pick.py --mode pick
+OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py --mode smoke
+OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py --mode pick
 
 # 无物体碰撞对照；物体保持运动学静止，不参与软指接触
-OMNI_KIT_ACCEPT_EULA=YES RoboDojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
+OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
   --mode no-contact --output data/runs/robodojo_no_contact
 
 # 使用基本方块排除资产碰撞网格的影响
-OMNI_KIT_ACCEPT_EULA=YES RoboDojo/.venv/bin/python benchmarks/robodojo_soft_pick.py --primitive-box
+OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py --primitive-box
 
 # 单独指定现成 USD/USDZ 物体；沿夹持方向（世界 Y）归一化到 40 mm，可用 --object-width 修改（便于当前夹爪测试）
-OMNI_KIT_ACCEPT_EULA=YES RoboDojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
+OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
   --object-usd RoboDojo/Assets/Object/RoboDojo/Rigid/bottle/00000/object.usdz
 
 # 远程查看（独立进程，避免与另一个 Isaac Sim 实例争用 GPU）
-OMNI_KIT_ACCEPT_EULA=YES RoboDojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
+OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
   --livestream --livestream-ip SERVER_IP --mode pick
 ```
 
@@ -85,6 +86,7 @@ RGB/depth、相机内外参分别存储。静止图像会检查是否因外壳�
 
 软指复用 `shared` 的 STL、材料、相机参数和安装矩阵工具。
 5.1 legacy FEM 重新从 STL 生成仿真/碰撞网格，不能直接套用 6.2 TetMesh 的节点顺序。
+可选 `--fem-mesh` 路径显式提供同一份贴合四面体网格给力学和碰撞，并验证节点/单元顺序；固定区诊断、网格生成和实际对照见 [贴合网格迭代](../docs/conforming-fem-2026-11-12.md)。
 默认只固定底部 4 mm，自由节点由 PhysX 求解，不写入预制形变。
 两侧网格的节点数可能不同，逐侧计算 pin mask，不能共用节点编号。
 

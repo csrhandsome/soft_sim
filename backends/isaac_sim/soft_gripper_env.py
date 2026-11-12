@@ -6,6 +6,7 @@ import numpy as np
 from shared.environment import BaseGripperEnv, ForceReading
 from shared.force import QuasistaticForceEstimator
 from shared.geometry import transform_points
+from backends.isaac_sim.cameras import configure_pinhole_camera
 
 
 class IsaacSimGripperEnv(BaseGripperEnv):
@@ -109,12 +110,7 @@ class IsaacSimGripperEnv(BaseGripperEnv):
         if cfg.simulation.render:
             for side in (0, 1):
                 camera = UsdGeom.Camera.Define(self.stage, f'/World/Camera_{side}')
-                # USD optical lengths are tenths of a scene unit. With a meter
-                # stage, 1 mm = .01 camera attribute units (FOV uses their ratio).
-                camera.CreateFocalLengthAttr(float(episode.focal_lengths_mm[side]) * .01)
-                camera.CreateHorizontalApertureAttr(cfg.camera.sensor_width_mm * .01)
-                camera.CreateVerticalApertureAttr(cfg.camera.sensor_width_mm * cfg.camera.height / cfg.camera.width * .01)
-                camera.CreateClippingRangeAttr(Gf.Vec2f(cfg.camera.near_m, cfg.camera.far_m))
+                configure_pinhole_camera(camera, cfg.camera, episode.focal_lengths_mm[side])
                 self.camera_ops.append(camera.AddTransformOp())
                 product = rep.create.render_product(str(camera.GetPath()), (cfg.camera.width, cfg.camera.height))
                 self.products.append(product)

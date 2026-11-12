@@ -49,10 +49,24 @@ def gmsh_tetrahedralize(path, scale, pitch):
         gmsh.finalize()
 
 
+def tetgen_tetrahedralize(vertices, faces, pitch):
+    """Conforming PLC mesh, as used by DiffPD's tet_mesh.tetrahedralize.
+
+    TetGen may split source triangles to improve quality, but keeps the PLC
+    surface. pitch controls maximum tet volume, not a guaranteed edge length.
+    """
+    import tetgen
+    generator = tetgen.TetGen(np.asarray(vertices), np.asarray(faces, dtype=np.int32))
+    points, tets = generator.tetrahedralize(minratio=1.4, mindihedral=10.,
+        maxvolume=pitch**3 / 6, fixedvolume=True, steinerleft=-1, quiet=True)
+    used, inverse = np.unique(tets, return_inverse=True)
+    return points[used], inverse.reshape(-1, 4)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config')
-    parser.add_argument('--method', choices=['voxel', 'gmsh'], default='voxel')
+    parser.add_argument('--method', choices=['voxel', 'gmsh', 'tetgen'], default='voxel')
     parser.add_argument('--pitch', type=float, help='Voxel edge / Gmsh maximum edge length, meters')
     parser.add_argument('--output')
     args = parser.parse_args()
@@ -65,6 +79,8 @@ def main():
     pitch = config.mesh.voxel_pitch_m
     if args.method == 'gmsh':
         points, tets = gmsh_tetrahedralize(path, config.mesh.scale_to_m, pitch)
+    elif args.method == 'tetgen':
+        points, tets = tetgen_tetrahedralize(vertices, faces, pitch)
     else:
         points, tets = voxel_tetrahedralize(vertices, faces, pitch)
     inverted = tet_volumes(points, tets) < 0
@@ -75,6 +91,9 @@ def main():
                     source_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
                     stl_volume_m3=float(surface_volume), stl_bounds_m=[vertices.min(0).tolist(), vertices.max(0).tolist()],
                     approximation=args.method == 'voxel')
+    if args.method == 'tetgen':
+        metadata.update(maximum_tet_volume_m3=pitch**3 / 6,
+                        mesher='tetgen', radius_edge_ratio=1.4, minimum_dihedral_deg=10.)
     mesh = TetMesh(points, tets.astype(np.int32), metadata).validate()
     metadata['volume_m3'] = mesh.volume
     metadata['volume_relative_error'] = mesh.volume / surface_volume - 1

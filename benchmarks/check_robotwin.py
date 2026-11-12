@@ -1,8 +1,12 @@
 """Check RoboTwin SAPIEN rendering and mplib planning without downloading all tasks."""
 from pathlib import Path
+import argparse
 import json
 import sys
 ROOT = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--output", default="data/runs/robotwin_smoke")
+args = parser.parse_args()
 sys.path.insert(0, str(ROOT))
 import numpy as np
 import sapien
@@ -51,7 +55,7 @@ camera.take_picture()
 color = camera.get_picture("Color")[..., :3]
 if not np.isfinite(color).all() or color.std() < .001:
     raise RuntimeError("Empty SAPIEN camera frame")
-out = ROOT / "data/runs/robotwin_smoke"
+out = ROOT / args.output
 out.mkdir(parents=True, exist_ok=True)
 write_png(out / "overview.png", (np.clip(color, 0, 1) * 255).astype(np.uint8))
 result = dict(sapien=sapien.__version__, mplib=mplib.__version__,

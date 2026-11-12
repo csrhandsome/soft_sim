@@ -18,10 +18,12 @@ url = "https://github.com/yuechen0614/curobo"
 rev = "d17b54ce32cba095c0b000c4c58777075d11de0e"
 path = ".deps/curobo"
 
-[tool.soft-sim.checkouts.RoboDojo]
+[tool.soft-sim.source-repositories.robodojo]
 url = "https://github.com/RoboDojo-Benchmark/RoboDojo.git"
 rev = "f57e1633ffed59761bc8e568cfe7530c4b33381c"
+path = "RoboDojo"
 
-[tool.soft-sim.checkouts.RoboTwin]
+[tool.soft-sim.source-repositories.robotwin]
 url = "https://github.com/RoboTwin-Platform/RoboTwin.git"
 rev = "ea8b21121ebb3cd201ff5b3fe361944ac94eda3f"
+path = "RoboTwin"
