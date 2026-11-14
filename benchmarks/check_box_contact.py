@@ -8,6 +8,10 @@ import json
 from pathlib import Path
 
 import numpy as np
+try:
+    from benchmarks.episode_reader import open_frame
+except ModuleNotFoundError:
+    from episode_reader import open_frame
 from scipy.spatial.transform import Rotation
 
 
@@ -37,7 +41,7 @@ def check(recording, maximum_penetration_mm=.5):
         raise ValueError("This diagnostic requires the recorded analytic rigid box dimensions")
     rows = []
     for row in episode["frames"]:
-        with np.load(recording / row["file"], allow_pickle=False) as frame:
+        with open_frame(recording, row) as frame:
             distances = [box_signed_distances(frame["finger_collision_nodes_" + side],
                 frame["object_position"], frame["object_orientation_wxyz"], result["object_size_m"])
                 for side in ("left", "right")]

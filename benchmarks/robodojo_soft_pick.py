@@ -76,7 +76,9 @@ def main():
                         help="Refine display edges and embed them in the FEM; collision geometry is preserved, zero keeps the baseline")
     parser.add_argument("--grasp-plan", help="plan.json from plan_soft_grasp.py; replay its checked joint paths")
     parser.add_argument("--record-episode", action="store_true",
-                        help="Save synchronized left/right/external RGB, states and MP4s under OUTPUT/recording")
+                        help="Save synchronized RGB/state using LeRobot v3 under OUTPUT/recording")
+    parser.add_argument("--dataset-root", type=Path,
+                        help="Append episodes to a shared LeRobot v3 dataset (same sensor schema)")
     parser.add_argument("--video-fps", type=float, default=20., help="RGB sampling and playback rate in simulation time")
     parser.add_argument("--output", default="data/runs/robodojo_soft_pick")
     args = parser.parse_args()
@@ -434,7 +436,9 @@ def main():
                 collision_nodes_recorded=args.record_collision_nodes,
                 rigid_object_max_depenetration_velocity_override_m_s=args.max_depenetration_velocity,
                 record_stride=record_stride, grasp_plan=str(plan_file) if grasp_plan else None)
-            recorder = EpisodeRecorder(out / "recording", args.video_fps, calibration)
+            recorder = EpisodeRecorder(out / "recording", args.video_fps, calibration,
+                dataset_root=args.dataset_root,
+                task="squeeze and release" if args.mode == "squeeze" else "pick and lift the object")
         from omni.kit.viewport.utility import get_active_viewport
         viewport = get_active_viewport()
         if viewport:
@@ -637,7 +641,7 @@ def main():
         (out / "result.json").write_text(json.dumps(result, indent=2))
         if recorder is not None:
             recorder.close(complete=True, result={k: v for k, v in result.items() if k != "config"})
-            print("EPISODE_VIDEO", str(out / "recording/episode.mp4"), "frames", len(recorder.rows), flush=True)
+            print("LEROBOT_DATASET", str(recorder.root), "frames", len(recorder.rows), flush=True)
         print("RESULT", json.dumps({k:v for k,v in result.items() if k != "config"}), flush=True)
     except Exception:
         import traceback

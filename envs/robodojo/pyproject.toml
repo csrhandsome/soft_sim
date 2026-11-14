@@ -3,13 +3,28 @@ name = "soft-sim-robodojo"
 version = "0.1.0"
 requires-python = ">=3.11,<3.12"
 dependencies = [
-  "isaacsim[all,extscache]==5.1.0.0", "isaaclab==0.54.3", "isaaclab-assets",
-  "nvidia-curobo[cu12]", "torch==2.7.0", "torchvision==0.22.0",
-  "numpy==1.26.0", "scipy==1.15.3", "pillow==11.3.0", "trimesh==4.5.1",
-  "opencv-python-headless==4.11.0.86", "starlette==0.45.3", "rtree==1.3.0",
-  "pyyaml==6.0.2", "imageio==2.37.0", "einops==0.8.2",
+  "isaacsim[all,extscache]==5.1.0.0",
+  "isaaclab==0.54.3",
+  "isaaclab-assets",
+  "nvidia-curobo[cu12]",
+  "torch==2.7.0",
+  "torchvision==0.22.0",
+  "numpy==1.26.0",
+  "scipy==1.15.3",
+  "pillow==11.3.0",
+  "trimesh==4.5.1",
+  "opencv-python-headless==4.11.0.86",
+  "starlette==0.45.3",
+  "rtree==1.3.0",
+  "pyyaml==6.0.2",
+  "imageio==2.37.0",
+  "einops==0.8.2",
   # Imported by the RoboDojo planner and configuration helpers.
-  "transforms3d==0.4.2", "omegaconf==2.4.0",
+  "transforms3d==0.4.2",
+  "omegaconf==2.4.0",
+  "h5py>=3.16.0",
+  "isaaclab-contrib",
+  "isaaclab-tasks",
 ]
 
 [tool.uv]
@@ -256,6 +271,8 @@ torch = { index = "aliyun" }
 isaaclab = { path = "../../.deps/IsaacLab/source/isaaclab", editable = true }
 isaaclab-assets = { path = "../../.deps/IsaacLab/source/isaaclab_assets", editable = true }
 nvidia-curobo = { path = "../../.deps/curobo", editable = true }
+isaaclab-contrib = { path = "../../.deps/IsaacLab/source/isaaclab_contrib", editable = true }
+isaaclab-tasks = { path = "../../.deps/IsaacLab/source/isaaclab_tasks", editable = true }
 
 [[tool.uv.index]]
 name = "nvidia"

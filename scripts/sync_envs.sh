@@ -13,14 +13,15 @@ unset VIRTUAL_ENV UV_PROJECT_ENVIRONMENT
 export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-600}" UV_HTTP_RETRIES="${UV_HTTP_RETRIES:-5}"
 export UV_CONCURRENT_DOWNLOADS="${UV_CONCURRENT_DOWNLOADS:-2}"
 case "$target" in
-    all) projects=(core planning robodojo) ;;
-    core|planning|robodojo) projects=("$target") ;;
-    *) printf 'Usage: bash scripts/sync_envs.sh [all|core|planning|robodojo] [uv sync options]\n' >&2; exit 2 ;;
+    all) projects=(core planning robodojo dataset) ;;
+    core|planning|robodojo|dataset) projects=("$target") ;;
+    *) printf 'Usage: bash scripts/sync_envs.sh [all|core|planning|robodojo|dataset] [uv sync options]\n' >&2; exit 2 ;;
 esac
 for project in "${projects[@]}"; do
     case "$project" in
         core) "$uv_bin" sync --locked --project "$project_root" "$@" ;;
         planning) "$uv_bin" sync --locked --project "$project_root/envs/planning" "$@" ;;
+        dataset) "$uv_bin" sync --locked --project "$project_root/envs/dataset" "$@" ;;
         robodojo)
             python3 "$project_root/scripts/prepare_sources.py" --detach
             "$uv_bin" sync --locked --project "$project_root/envs/robodojo" "$@"

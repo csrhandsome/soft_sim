@@ -1,0 +1,235 @@
+                                                                                                                                                          TPU 75A (2.85mm)
+
+                                                                                                                                                                       V1.0
+
+
+TPU 75A (2.85mm)
+
+
+   Recommended Printing Settings
+
+Subjects                                                                                       Data
+
+
+
+                                                                                               Blast Drying Oven: 70 °C, 8 h
+
+Drying Settings before Printing
+                                                                                               Printer Heatbed: 90 °C, 16 h
+
+
+
+Printing and Keeping Container's
+                                                                                               < 20% RH ( Sealed, with desiccant )
+Humidity
+
+
+Nozzle Size                                                                                    0.4mm, 0.6mm, 0.8 mm
+
+
+Nozzle Temperature                                                                             200 - 250 °C
+
+
+Build Plate Type                                                                               Textured PEI Plate / Smooth PEI Plate
+
+
+Bed Temperature                                                                                30 - 35 °C
+
+
+Cooling Fan                                                                                    Turn on
+
+
+Printing Speed                                                                                 < 200 mm/s
+
+
+Retraction Length                                                                              2 - 4 mm
+
+
+Retraction Speed                                                                               10 - 50 mm/s
+
+
+Chamber Temperature                                                                            25 - 45 °C
+
+
+Max Overhang Angle                                                                             ~ 40°
+
+
+Max Bridging Length                                                                            ＜ 10mm
+
+
+Support                                                                                        Turn on
+
+
+
+
+   P    hysical Properties
+
+  Subjects                                                        Testing Methods                                                           Data
+
+
+  Density                                                         ISO 1183                                                                  1.17 g/cm³
+
+
+  Melt Index                                                      190 °C, 2.16 kg                                                           25 ± 5 g/10 min
+
+
+
+  Melting Temperature                                             DSC, 10 °C/min                                                            190 °C
+
+
+
+  Glass Transition Temperature                                     DSC, 10 °C/min                                                           /
+
+
+
+  Crystallization Temperature                                      DSC, 10 °C/min                                                           /
+
+
+
+  Vicat Softening Temperature                                      ISO 306, GB/T 1633                                                       /
+
+
+
+  Heat Deflection Temperature                                      ISO 75 1.8 MPa                                                           /
+
+
+  Heat Deflection Temperature                                      ISO 75 0.45 MPa                                                          /
+
+
+
+  Saturated Water Absorption Rate                                  25 °C, 55% RH                                                            0.70%
+
+
+  Durometer Hardness                                               ASTM D2240                                                               76 ± 1 A
+
+  Ball Rebound Resilience Value                                    ASTM D3574                                                               50%
+
+
+
+
+   M echanical Properties
+
+  Subjects                                                        Testing Methods                                                           Data
+
+
+  Young's Modulus (X-Y)                                           ISO 527, GB/T 1040                                                        /
+
+
+  Young's Modulus (Z)                                             ISO 527, GB/T 1040                                                        /
+
+
+
+  Tensile Strength (X-Y)                                          ISO 527, GB/T 1040                                                        11.50 ± 0.50 MPa
+
+
+
+  Tensile Strength (Z)                                             ISO 527, GB/T 1040                                                       /
+
+
+
+  Breaking Elongation Rate (X-Y)                                   ISO 527, GB/T 1040                                                       > 800%
+
+
+  Breaking Elongation Rate (Z)                                     ISO 527, GB/T 1040                                                       /
+
+
+
+  Bending Modulus (X-Y)                                            ISO 178, GB/T 9341                                                       /
+
+
+
+  Tear strength (X-Y)                                              ASTM D624，GB/T 529                                                       /
+
+
+
+  Tear strength (Z)                                                ASTM D624，GB/T 529                                                       14.00 ± 0.80 N/mm
+
+
+  Bending Modulus (Z)                                              ISO 178, GB/T 9341                                                       /
+
+
+
+  Bending Strength (X-Y)                                           ISO 178, GB/T 9341                                                       /
+
+
+
+  Bending Strength (Z)                                             ISO 178, GB/T 9341                                                       /
+
+
+                                                                                                                                            /
+  Impact Strength (X-Y)                                            ISO 179, GB/T 1043
+
+
+
+  Impact Strength (Z)                                              ISO 179, GB/T 1043                                                       /
+
+
+
+  Abrasion Volume Loss                                             ASTM D5963-22                                                            116 mm³
+
+
+
+  Thickness Loss after Static Compression                          ASTM D3574 TestC                                                         2.7%
+
+
+
+  Static Compressive Strength                                      ASTM D3574 TestC                                                         174 KPa
+
+
+
+
+All the specimens were printed at the following settings : Nozzle Temperature 230 °C, Printing Speed 11     9 mm/s, Bed Temperature 35 °C, InfDensity 100%. Al
+the specimens were dried at 70 °C for 12 h before testing. When drying the lament, it's reuired to use an oven that has big enough inside volume and can provide
+even temperature distribution, such as a blast drying oven (forced-air drying oven), the lament and prints need to be away from the heater, and amicro-wave oven o
+kitchen oven is not compatible, otherwise the lament and prints can get damaged.
+
+
+
+   O ther Physical ang Chemical Properties
+
+Subjects                                                                                       Data
+
+
+
+                                                                                               Black, Orange, Blue, etc., solid
+Color and State
+
+
+
+
+Odor                                                                                           Odorless
+
+
+Composition                                                                                    Thermoplastic polyurethane
+
+
+Skin Hazards                                                                                   No hazard
+
+
+                                                                                               Stable under normal storage and
+Chemical Stability
+                                                                                               handling conditions
+
+
+Solubility                                                                                     Insoluble in water
+
+
+Resistance to Acid                                                                             Not resistant
+
+
+Resistance to Alkali                                                                           Not resistant
+
+
+Resistance to Organic Solvent                                                                  Not resistant to some organic solvents
+
+
+Resistance to Oil and Grease                                                                   Resistant to most kinds of oil and grease
+
+
+Flammability                                                                                   Flammable
+
+
+Combustion Products                                                                            Water, carbon oxides, nitrogen oxides
+
+Odor of Combustion Products                                                                    Pungent odor
+

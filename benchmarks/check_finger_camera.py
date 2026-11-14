@@ -13,6 +13,10 @@ from pathlib import Path
 import sys
 
 import numpy as np
+try:
+    from benchmarks.episode_reader import open_frame
+except ModuleNotFoundError:
+    from episode_reader import open_frame
 import trimesh
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,7 +44,7 @@ def check(folder):
     pixels = np.column_stack([x.ravel(), y.ravel()])
     reports, motion_reports = [], []
     motion_rows = [row for row in episode["frames"] if row["phase"] == "pregrasp"]
-    with np.load(recording / first["file"], allow_pickle=False) as frame:
+    with open_frame(recording, first) as frame:
         for side, name in enumerate(("left_rgb", "right_rgb")):
             intrinsics = np.asarray(episode["calibration"]["finger_intrinsics"])[side]
             # Also validate serialized calibration against the physical lens.
@@ -77,7 +81,7 @@ def check(folder):
                     raise ValueError("Too few near-base STL rays for the motion check")
                 samples = []
                 for row in motion_rows:
-                    with np.load(recording / row["file"], allow_pickle=False) as moving:
+                    with open_frame(recording, row) as moving:
                         actual = moving["finger_depth_m"][side, pixels[indices[near], 1], pixels[indices[near], 0]]
                     error = np.abs(actual - expected[near])
                     samples.append(dict(time_s=row["time_s"],

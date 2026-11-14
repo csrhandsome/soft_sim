@@ -10,6 +10,12 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+try:
+    from benchmarks.episode_reader import open_frame
+    from benchmarks.motion_execution import settled_phase_pairs
+except ModuleNotFoundError:
+    from episode_reader import open_frame
+    from motion_execution import settled_phase_pairs
 
 
 def feature_motion(previous, current):
@@ -51,17 +57,17 @@ def check(recording, maximum_p95_px=.5, settle_s=.25):
         rows = [row for row in episode["frames"] if row["phase"] == phase]
         if not rows:
             continue
-        rows = [row for row in rows if row["time_s"] >= rows[0]["time_s"] + settle_s]
+        pairs = settled_phase_pairs(episode["frames"], phase, settle_s)
         samples = {name: [] for name in ("left_rgb", "right_rgb", "external_rgb")}
-        previous = None
-        for row in rows:
-            with np.load(recording / row["file"], allow_pickle=False) as frame:
+        for a, b in pairs:
+            with open_frame(recording, episode["frames"][a]) as frame:
+                previous = {name: frame[name] for name in samples}
+            row = episode["frames"][b]
+            with open_frame(recording, row) as frame:
                 current = {name: frame[name] for name in samples}
-            if previous is not None:
-                for name in samples:
-                    result = feature_motion(previous[name], current[name])
-                    samples[name].append(dict(time_s=row["time_s"], measurement=result))
-            previous = current
+            for name in samples:
+                result = feature_motion(previous[name], current[name])
+                samples[name].append(dict(time_s=row["time_s"], measurement=result))
         reports[phase] = {}
         for name, frames in samples.items():
             measured = [row for row in frames if row["measurement"] is not None]

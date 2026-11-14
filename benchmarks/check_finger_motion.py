@@ -9,6 +9,12 @@ import json
 from pathlib import Path
 
 import numpy as np
+try:
+    from benchmarks.episode_reader import open_frame
+    from benchmarks.motion_execution import settled_phase_pairs
+except ModuleNotFoundError:
+    from episode_reader import open_frame
+    from motion_execution import settled_phase_pairs
 
 
 def project_nodes(points, camera_to_world, intrinsics):
@@ -37,7 +43,7 @@ def check(recording, maximum_unloaded_mm=2., maximum_hold_p95_px=.5, maximum_pin
     projected_positions = []
     rows, local_positions, camera_in_mount = [], [], []
     for row in episode["frames"]:
-        with np.load(recording / row["file"], allow_pickle=False) as frame:
+        with open_frame(recording, row, include_images=False) as frame:
             mounts, cameras = frame["finger_mounts"], frame["finger_camera_to_world"]
             local = [(frame[f"finger_nodes_{name}"] - mounts[side, :3, 3]) @ mounts[side, :3, :3]
                      for side, name in enumerate(("left", "right"))]
@@ -75,10 +81,11 @@ def check(recording, maximum_unloaded_mm=2., maximum_hold_p95_px=.5, maximum_pin
         # Exclude initial settling after a hold starts. These are physical node
         # changes in the base frame, not camera motion or a visual stabilizer.
         if phase in ("hold", "verify_hold"):
-            settled = [i for i in indices if rows[i]["time_s"] >= rows[indices[0]]["time_s"] + .25]
-            if len(settled) > 1:
+            pairs = settled_phase_pairs(rows, phase)
+            stats["settled_checked_pairs"] = len(pairs)
+            if pairs:
                 deltas = [np.stack([np.linalg.norm(local_positions[b][side] - local_positions[a][side], axis=1) * 1000
-                                   for a, b in zip(settled[:-1], settled[1:])]) for side in (0, 1)]
+                                   for a, b in pairs]) for side in (0, 1)]
                 stats["settled_max_frame_node_delta_mm"] = [float(d.max()) for d in deltas]
                 stats["settled_p95_frame_node_delta_mm"] = [float(np.percentile(d, 95)) for d in deltas]
                 if projected_positions:
@@ -86,7 +93,7 @@ def check(recording, maximum_unloaded_mm=2., maximum_hold_p95_px=.5, maximum_pin
                     # bars several pixels. Use each frame's P95, then take the
                     # worst frame; pooling frames would hide short bursts.
                     motion_px = [[], []]
-                    for a, b in zip(settled[:-1], settled[1:]):
+                    for a, b in pairs:
                         for side in (0, 1):
                             previous, current = projected_positions[a][side], projected_positions[b][side]
                             in_frame = np.all(np.isfinite(previous) & np.isfinite(current)
@@ -96,7 +103,7 @@ def check(recording, maximum_unloaded_mm=2., maximum_hold_p95_px=.5, maximum_pin
                             if len(delta):
                                 motion_px[side].append(np.percentile(delta, 95))
                     stats["settled_max_frame_p95_projected_node_delta_px"] = [
-                        float(max(values)) if len(values) == len(settled) - 1 else None
+                        float(max(values)) if len(values) == len(pairs) else None
                         for values in motion_px]
         phases[phase] = stats
     maximum_pin_error = float(np.max([row["max_pin_error_mm"] for row in rows]))

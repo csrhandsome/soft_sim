@@ -82,7 +82,7 @@ class MuJoCoGripperEnv(BaseGripperEnv):
                         local.append(np.zeros(3))
                 flex = ET.SubElement(deformable, 'flex', name=name, dim='3', radius='0.0003',
                                      body=' '.join(bodies), vertex=numbers(local), element=numbers(self.mesh.tets),
-                                     rgba='.12 .7 .76 1' if side == 0 else '.92 .54 .2 1')
+                                     rgba=numbers((*cfg.material.color_srgb, 1.)))
             else:
                 # Optional reduced-coordinate model for previews; final datasets should
                 # compare its convergence against full DOFs and a conforming mesh.
@@ -90,7 +90,7 @@ class MuJoCoGripperEnv(BaseGripperEnv):
                                      dof=cfg.simulation.mujoco_dof, cellcount=numbers(cfg.simulation.mujoco_cellcount),
                                      point=numbers(self.mesh.vertices), element=numbers(self.mesh.tets),
                                      mass=str(mass), radius='0.0003',
-                                     rgba='.12 .7 .76 1' if side == 0 else '.92 .54 .2 1')
+                                     rgba=numbers((*cfg.material.color_srgb, 1.)))
                 # Interpolated DOFs pin grid nodes; pin the complete bottom grid layer.
                 cells = cfg.simulation.mujoco_cellcount
                 order = 2 if cfg.simulation.mujoco_dof == 'quadratic' else 1

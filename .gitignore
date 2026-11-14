@@ -35,3 +35,9 @@ data/generated/
 
 # Reference repositories are cloned locally; track their manifest and notes.
 /third_party/*/
+data/materials/Bambu_TPU_75A-TDS.pdf
+.gitignore
+
+/data/datasets/
+*.png
+*.mp4

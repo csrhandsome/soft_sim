@@ -1,5 +1,7 @@
 # RoboDojo 新软夹爪三路 RGB 采集
 
+**2026-11-12 更新：** 新采集默认 Orange 021 U、拓竹 TPU 75A 和 LeRobot v3，详见[新参数、格式与官方任务接入](tpu75a-lerobot-v3.md)。下文逐帧 NPZ 格式及 85A 材料均是历史记录；新格式请使用 `envs/dataset` 运行验证器。
+
 当前带细分形变显示且通过保持画面稳定性检查的版本为 `robodojo_episode_029_refined_surface/recording/episode.mp4`，左右保持段跳动指标为 0.208 / 0.339 px，均低于原有 0.5 px 目标。它保留 `027` 的材料、52 mm 闭合参数、接触修正上限及渲染采样，将显示表面细分后绑定到实际 FEM 节点，以呈现原 STL 长三角面遗漏的横梁弯曲。主入口已默认启用 2 mm 显示细分，`--surface-max-edge-m 0` 可保留旧显示。说明、对照与复现见 [形变排查](fem-deformation-2026-11-12.md)。验证覆盖 10 秒静止挤压与恢复，不代表运动抓取或实物动力学已标定。
 
 `027_contact_render_quality` 保留为修正显示前的稳定物理基线；原始指内 RGB 前后对比为该 episode 下的 `camera_stability_before_after.mp4`，左右保持段跳动指标为 0.226 / 0.258 px。完整历史结果与复现命令见本文末尾。

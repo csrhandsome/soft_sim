@@ -252,6 +252,15 @@ version = "5.1.0.0"
 requires-dist = ["isaacsim-kernel==5.1.0.0", "numba==0.59.1", "llvmlite==0.42.0", "nest-asyncio==1.5.6", "markupsafe==2.1.3", "matplotlib==3.10.3", "contourpy==1.3.1", "fonttools==4.55.3", "pyparsing==3.0.9", "cycler==0.11.0", "kiwisolver==1.4.4", "pint==0.20.1", "packaging==23.0", "gunicorn==23.0.0", "osqp==0.6.7.post3", "qdldl==0.1.7.post5", "tornado==6.5.1", "pyperclip==1.8.0", "python-dateutil==2.9.0.post0", "six==1.17.0", "imageio==2.37.0", "scipy==1.15.3", "pyyaml==6.0.2", "opencv-python-headless==4.11.0.86", "trimesh==4.5.1", "rtree==1.3.0", "aioboto3==15.1.0", "aiobotocore==2.24.0", "boto3==1.39.11", "botocore==1.39.11", "awscrt==0.23.8", "s3transfer==0.13.1", "azure-storage-blob==12.17.0", "azure-identity==1.13.0", "oauthlib==3.2.2", "requests-oauthlib==1.3.1", "isodate==0.6.1", "cryptography==44.0.0", "azure-core==1.28.0", "msal==1.27.0", "msal-extensions==1.0.0", "portalocker==2.7.0", "jmespath==1.0.1", "python-dateutil==2.9.0.post0", "six==1.17.0", "torch==2.7.0", "torchvision==0.22.0", "torchaudio==2.7.0", "filelock==3.13.1", "fsspec==2024.6.1", "mpmath==1.3.0", "networkx==3.3", "sympy==1.13.3"]
 
 [[package]]
+name = "absl-py"
+version = "2.5.1"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/1f/1d/58e2b5a6e4d703ccb2a029943d665974cb3d5a4fb2b3e3675dd03a9df10e/absl_py-2.5.1.tar.gz", hash = "sha256:286e71c82c1a38e75bbcf185f9b37d0305ad7786535107cb49bf4df9ff2e1f95" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/b3/7d/01e62f59e4166af1be6238d9f2b7f3453630c51b8044b412d05b5606532a/absl_py-2.5.1-py3-none-any.whl", hash = "sha256:721200f2f0e9960f2ca9dc3a2a706b201f5f75d812c158f059cbbe29eeafbdb8" },
+]
+
+[[package]]
 name = "aioboto3"
 version = "15.1.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -961,6 +970,20 @@ wheels = [
 ]
 
 [[package]]
+name = "grpcio"
+version = "1.85.1"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/f0/03/f9e805772d4d01da2a1754a5f63c58601eacaf8f1e878729217188de7d16/grpcio-1.85.1.tar.gz", hash = "sha256:5f530287d5de5f7f66089ead81de44f6787162944dab3922efa65dfdff108a1d" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/47/3c/ab73cb485967ac57f00350fef66c8180400c6a832436cf39811cc7d41f8d/grpcio-1.85.1-cp311-cp311-linux_armv7l.whl", hash = "sha256:d2a776b113e7bd6d139e679f5da281193d6410cce361e4180c9da0d553e01927" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/1a/4f/30f66cedfec6c03bc304b28fbe073ed53179cf37a511b8ee8e8e7e2d3f17/grpcio-1.85.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:83aced2a1c05648cee0de34e531351118b14c58238f0a61b43559ac8851647a8" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/08/4d/d6339c51032649a90c347a67ad41b56f2f1a564f4960efcc72409fe03eba/grpcio-1.85.1-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:83b09ca3f9602caf4f1b4295b4bb002b10477789ff9797feeedc811b9a6be0b7" },
+]
+
+[[package]]
 name = "gunicorn"
 version = "23.0.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -994,6 +1017,19 @@ source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
 sdist = { url = "https://mirrors.aliyun.com/pypi/packages/01/ee/02a2c011bdab74c6fb3c75474d40b3052059d95df7e73351460c8588d963/h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1" }
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86" },
+]
+
+[[package]]
+name = "h5py"
+version = "3.16.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/db/33/acd0ce6863b6c0d7735007df01815403f5589a21ff8c2e1ee2587a38f548/h5py-3.16.0.tar.gz", hash = "sha256:a0dbaad796840ccaa67a4c144a0d0c8080073c34c76d5a6941d6818678ef2738" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/52/a0/c1f604538ff6db22a0690be2dc44ab59178e115f63c917794e529356ab23/h5py-3.16.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:fb1720028d99040792bb2fb31facb8da44a6f29df7697e0b84f0d79aff2e9bd3" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/4c/42/2193ed41ccee78baba8fcc0cff2c925b8b9ee3793305b23e1f22c20bf4c7/h5py-3.16.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:ffbab2fedd6581f6aa31cf1639ca2cb86e02779de525667892ebf4cc9fd26434" },
 ]
 
 [[package]]
@@ -1208,6 +1244,34 @@ requires-dist = [
 name = "isaaclab-assets"
 version = "0.2.4"
 source = { editable = "../../.deps/IsaacLab/source/isaaclab_assets" }
+
+[[package]]
+name = "isaaclab-contrib"
+version = "0.0.2"
+source = { editable = "../../.deps/IsaacLab/source/isaaclab_contrib" }
+
+[[package]]
+name = "isaaclab-tasks"
+version = "0.11.14"
+source = { editable = "../../.deps/IsaacLab/source/isaaclab_tasks" }
+dependencies = [
+    { name = "numba", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "protobuf", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "tensorboard", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "torchvision", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numba" },
+    { name = "numpy", specifier = "<2" },
+    { name = "protobuf", specifier = ">=4.25.8,!=5.26.0" },
+    { name = "tensorboard" },
+    { name = "torch", specifier = ">=2.7" },
+    { name = "torchvision", specifier = ">=0.14.1" },
+]
 
 [[package]]
 name = "isaacsim"
@@ -1700,6 +1764,15 @@ sdist = { url = "https://mirrors.aliyun.com/pypi/packages/aa/14/8505f246191c41da
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/68/f5/d5296c3bfa1d4ba0580f1785526dc634f65ee25619db75538583a33f40bb/mapbox_earcut-2.1.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:89c81f3806540c5b7091fc7ac4dcc2336d6410a922ff9fb384835015c7709c1a" },
     { url = "https://mirrors.aliyun.com/pypi/packages/4b/3b/0d2139c8599650ae8edf68b6c5efeb60776dfdd4dd905fbfe285899f25eb/mapbox_earcut-2.1.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:a17febe0d541fe7cfc9dced37234adda598e0fd303d08b5f56c75b4d5e0ba0d3" },
+]
+
+[[package]]
+name = "markdown"
+version = "3.11.3"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/ca/eb/dc0fd6eff604bfb870b7fb68b90985a32caaf3c76f67736bbf7f438acd59/markdown-3.11.3.tar.gz", hash = "sha256:81eb91631dc97ad1efbc76019ef0f80fe90ca49ddf81546752d79989c3bfff3e" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/81/6f/1fa8970e960e5c832874399e6efa564870ade8206d57fef5d5e296b834f5/markdown-3.11.3-py3-none-any.whl", hash = "sha256:e1a31a112232504d753e5c01bb8c2de90d3f0ba986b063e10770cf7695b09e73" },
 ]
 
 [[package]]
@@ -2838,9 +2911,12 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "einops", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "h5py", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "imageio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "isaaclab", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "isaaclab-assets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "isaaclab-contrib", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "isaaclab-tasks", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "isaacsim", extra = ["all", "extscache"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "nvidia-curobo", extra = ["cu12"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -2860,9 +2936,12 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "einops", specifier = "==0.8.2" },
+    { name = "h5py", specifier = ">=3.16.0" },
     { name = "imageio", specifier = "==2.37.0" },
     { name = "isaaclab", editable = "../../.deps/IsaacLab/source/isaaclab" },
     { name = "isaaclab-assets", editable = "../../.deps/IsaacLab/source/isaaclab_assets" },
+    { name = "isaaclab-contrib", editable = "../../.deps/IsaacLab/source/isaaclab_contrib" },
+    { name = "isaaclab-tasks", editable = "../../.deps/IsaacLab/source/isaaclab_tasks" },
     { name = "isaacsim", extras = ["all", "extscache"], specifier = "==5.1.0.0" },
     { name = "numpy", specifier = "==1.26.0" },
     { name = "nvidia-curobo", extras = ["cu12"], editable = "../../.deps/curobo" },
@@ -2910,6 +2989,35 @@ dependencies = [
 sdist = { url = "https://mirrors.aliyun.com/pypi/packages/11/8a/5a7fd6284fa8caac23a26c9ddf9c30485a48169344b4bd3b0f02fef1890f/sympy-1.13.3.tar.gz", hash = "sha256:b27fd2c6530e0ab39e275fc9b683895367e51d5da91baa8d3d64db2565fec4d9" }
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/99/ff/c87e0622b1dadea79d2fb0b25ade9ed98954c9033722eb707053d310d4f3/sympy-1.13.3-py3-none-any.whl", hash = "sha256:54612cf55a62755ee71824ce692986f23c88ffa77207b30c1368eda4a7060f73" },
+]
+
+[[package]]
+name = "tensorboard"
+version = "2.21.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "absl-py", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "grpcio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "markdown", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "protobuf", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "setuptools", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "tensorboard-data-server", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "werkzeug", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/37/4b/cd2eec9642781a8f5b2fb9994e3933a7b259ab18e9d49aeede9b5acf6311/tensorboard-2.21.0-py3-none-any.whl", hash = "sha256:7279316dcb6bd5bc391d623dea841531299cde1887310e8133bc34a996d32255" },
+]
+
+[[package]]
+name = "tensorboard-data-server"
+version = "0.7.2"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/7a/13/e503968fefabd4c6b2650af21e110aa8466fe21432cd7c43a84577a89438/tensorboard_data_server-0.7.2-py3-none-any.whl", hash = "sha256:7e0610d205889588983836ec05dc098e80f97b7e7bbff7e994ebb78f578d0ddb" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/73/c6/825dab04195756cf8ff2e12698f22513b3db2f64925bdd41671bfb33aaa5/tensorboard_data_server-0.7.2-py3-none-manylinux_2_31_x86_64.whl", hash = "sha256:ef687163c24185ae9754ed5650eb5bc4d84ff257aabdc33f0cc6f74d8ba54530" },
 ]
 
 [[package]]
@@ -3269,6 +3377,18 @@ wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/e3/05/f52a60b66d9faf07a4f7d71dc056bffafe36a7e98c4eb5b78f04fe6e4e85/websockets-12.0-cp311-cp311-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6e9e7db18b4539a29cc5ad8c8b252738a30e2b13f033c2d6e9d0549b45841c04" },
     { url = "https://mirrors.aliyun.com/pypi/packages/95/aa/1ac767825c96f9d7e43c4c95683757d4ef28cf11fa47a69aca42428d3e3a/websockets-12.0-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:dff6cdf35e31d1315790149fee351f9e52978130cef6c87c4b6c9b3baf78bc53" },
     { url = "https://mirrors.aliyun.com/pypi/packages/79/4d/9cc401e7b07e80532ebc8c8e993f42541534da9e9249c59ee0139dcb0352/websockets-12.0-py3-none-any.whl", hash = "sha256:dc284bbc8d7c78a6c69e0c7325ab46ee5e40bb4d50e494d8131a07ef47500e9e" },
+]
+
+[[package]]
+name = "werkzeug"
+version = "3.1.9"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+dependencies = [
+    { name = "markupsafe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/a4/34/4dd12fc8bb7d61c91467ec3efe415ffa7d5456f799954b40c5bbaeae470e/werkzeug-3.1.9.tar.gz", hash = "sha256:55ca7c70a75689be937aa27f8ff4b018f06ff4838fc73045560bf0f5a1291060" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/a1/38/df03f564f43cec2684823f3cccae1a652ee7face1cbaa76fb223096e64d7/werkzeug-3.1.9-py3-none-any.whl", hash = "sha256:6392e50c78460ba618e5b21f08a71f59c99ce99cdc6cf6e3dd7e6ccca8754fab" },
 ]
 
 [[package]]

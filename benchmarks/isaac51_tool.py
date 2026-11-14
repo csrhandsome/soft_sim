@@ -23,11 +23,14 @@ class MountedSoftTool:
                  filtered_bodies=(), sleep_threshold=0., settling_threshold=0., sleep_damping=None,
                  max_depenetration_velocity=None, rt_subframes=2, lighting_samples_per_pixel=None,
                  simulation_resolution=44, surface_max_edge_m=.002, explicit_fem_mesh=False,
-                 self_collision=False):
+                 self_collision=False, rest_authoring_scale=1.):
         from omni.physx.scripts import deformableUtils, physicsUtils
         from pxr import Gf, Sdf, UsdGeom, Vt, PhysxSchema
         self.stage, self.config, self.root = stage, config.validate(), root
         self.explicit_fem_mesh = explicit_fem_mesh
+        self.rest_authoring_scale = float(rest_authoring_scale) if explicit_fem_mesh else 1.
+        if not np.isfinite(self.rest_authoring_scale) or self.rest_authoring_scale <= 0:
+            raise ValueError("Rest authoring scale must be finite and positive")
         self.mounts = validate_mount_poses(mounts)
         self.mesh = TetMesh.load(config.mesh)
         self.pin = self.mesh.vertices[:, 2] <= self.mesh.vertices[:, 2].min() + config.mesh.pin_height_m + 1e-8
@@ -41,6 +44,7 @@ class MountedSoftTool:
                                   surface_max_edge_m=surface_max_edge_m,
                                   collision_source_vertices=len(surface), collision_source_triangles=len(faces))
         self.mesh_settings.update(physics_mesh_source='explicit_tetrahedra' if explicit_fem_mesh else 'physx_voxel_cooking',
+                                  rest_authoring_scale=self.rest_authoring_scale,
                                   explicit_mesh_file=config.mesh.tetra_mesh if explicit_fem_mesh else None,
                                   pin_height_m=config.mesh.pin_height_m, self_collision=self_collision,
                                   explicit_initialization='authored rest positions and zero velocity before pinning'
@@ -57,18 +61,27 @@ class MountedSoftTool:
         for side, mount in enumerate(self.mounts):
             path = root + ("/Finger_left" if side == 0 else "/Finger_right")
             points = transform_points(self.mesh.vertices, mount[:3, 3], mount[:3, :3]).astype(np.float32)
-            skin = transform_points(surface, mount[:3, 3], mount[:3, :3]).astype(np.float32)
+            # Keep rest geometry independent of room translation/rotation.
+            # Tensor APIs still expose world nodes; display embedding uses
+            # those world nodes after removing this initial rigid transform.
+            # Optional compensated local units support isolated diagnostics.
+            # Production uses meters. World geometry and tensor states remain
+            # SI regardless of this local representation.
+            skin = (surface*self.rest_authoring_scale).astype(np.float32)
             mesh = UsdGeom.Mesh.Define(stage, path)
+            authored_pose = mount.copy()
+            authored_pose[:3, :3] /= self.rest_authoring_scale
+            mesh.AddTransformOp().Set(Gf.Matrix4d(*authored_pose.T.ravel().tolist()))
             mesh.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(skin))
             mesh.CreateFaceVertexCountsAttr([3] * len(faces))
             mesh.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(faces.astype(np.int32).ravel()))
             mesh.CreateSubdivisionSchemeAttr("none")
-            mesh.CreateDisplayColorAttr([Gf.Vec3f(.12, .7, .76) if side == 0 else Gf.Vec3f(.92, .54, .20)])
+            mesh.CreateDisplayColorAttr([Gf.Vec3f(*config.material.color_linear)])
             explicit = {}
             if explicit_fem_mesh:
                 # Use the same conforming volume mesh for mechanics and
                 # collision, following SOFA's deformable modelling examples.
-                tetra_points = [Gf.Vec3f(*point) for point in points.tolist()]
+                tetra_points = [Gf.Vec3f(*point) for point in (self.mesh.vertices*self.rest_authoring_scale).tolist()]
                 tetra_indices = self.mesh.tets.astype(np.int32).ravel().tolist()
                 explicit = dict(simulation_rest_points=tetra_points, simulation_indices=tetra_indices,
                                 collision_rest_points=tetra_points, collision_indices=tetra_indices)
@@ -86,10 +99,11 @@ class MountedSoftTool:
             collision.CreateContactOffsetAttr(config.simulation.contact_offset_m)
             collision.CreateRestOffsetAttr(config.simulation.rest_offset_m)
             physicsUtils.add_physics_material_to_prim(stage, mesh.GetPrim(), material)
-            if filtered_bodies:
+            selected_filtered = filtered_bodies.get(side, ()) if isinstance(filtered_bodies, dict) else filtered_bodies
+            if selected_filtered:
                 from pxr import UsdPhysics
                 UsdPhysics.FilteredPairsAPI.Apply(mesh.GetPrim()).CreateFilteredPairsRel().SetTargets(
-                    [Sdf.Path(body) for body in filtered_bodies])
+                    [Sdf.Path(body) for body in selected_filtered])
             self.initial.append(points)
             self.paths.append(path)
         if config.simulation.render:
@@ -123,6 +137,8 @@ class MountedSoftTool:
         import omni.physics.tensors as tensors
         self.tensor_sim = tensors.create_simulation_view("torch")
         self.tensor_sim.set_subspace_roots("/")
+        if hasattr(self, "fixtures"):
+            self.fixtures.initialize(self.tensor_sim)
         self.views = [self.tensor_sim.create_soft_body_view(path) for path in self.paths]
         self.indices, self.targets, self.local_nodes, self.pin_masks = [], [], [], []
         self._last_target_points = [None, None]
@@ -166,6 +182,11 @@ class MountedSoftTool:
             unanchored = ~np.isin(labels, np.unique(labels[pin]))
             from shared.mesh import tet_volumes
             element_volumes = tet_volumes(local, tets)
+            zero_free_rest_elements = 0
+            if self.explicit_fem_mesh:
+                inverse_rest = view.get_sim_element_rest_poses().cpu().numpy().reshape(-1, 3, 3)
+                zero_free_rest_elements = int(np.count_nonzero(
+                    ~np.any(inverse_rest != 0, axis=(1, 2)) & ~pin[tets].all(axis=1)))
             source_volume = self.mesh.metadata['stl_volume_m3']
             self.mesh_topology.append(dict(nodes=len(local), tets=len(tets), components=int(count),
                                            pinned_nodes=int(pin.sum()), pin_tolerance_m=pin_tolerance,
@@ -174,6 +195,7 @@ class MountedSoftTool:
                                            reference_volume_m3=float(element_volumes.sum()),
                                            reference_volume_to_stl_ratio=float(element_volumes.sum() / source_volume),
                                            minimum_reference_tet_volume_m3=float(element_volumes.min()),
+                                           tensor_reported_zero_free_rest_elements=zero_free_rest_elements,
                                            valid=not bool(unanchored.any()) and bool(np.all(element_volumes > 0))))
             self.sim_tets.append(tets)
             print("SOFT_TOOL_TOPOLOGY", side, self.mesh_topology[-1], flush=True)
@@ -203,7 +225,7 @@ class MountedSoftTool:
                 visual.CreateFaceVertexCountsAttr([3] * len(faces))
                 visual.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(faces.astype(np.int32).ravel()))
                 visual.CreateSubdivisionSchemeAttr('none')
-                visual.CreateDisplayColorAttr([Gf.Vec3f(.12, .7, .76) if side == 0 else Gf.Vec3f(.92, .54, .20)])
+                visual.CreateDisplayColorAttr([Gf.Vec3f(*self.config.material.color_linear)])
                 self.render_meshes.append(visual)
                 self.surface_bindings.append((indices, weights))
             self.mesh_settings.update(render_vertices=len(surface), render_triangles=len(faces),
@@ -220,10 +242,32 @@ class MountedSoftTool:
             surface = np.einsum('ni,nij->nj', weights, points[indices]).astype(np.float32)
             visual.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(surface))
 
+    def reset_to_mounts(self, mounts):
+        """Initialize the unloaded FEM after the host finishes resetting robots.
+
+        This is an initial condition, never a correction during execution.
+        Keep the authored local rest mesh and install it at measured mounts;
+        do not retain transients from a robot's reset or renderer warmup.
+        """
+        import torch
+        mounts = validate_mount_poses(mounts)
+        for side, (view, indices) in enumerate(zip(self.views, self.indices)):
+            pose = mounts[side]
+            points = transform_points(self.local_nodes[side], pose[:3, 3], pose[:3, :3]).astype(np.float32)
+            state = torch.as_tensor(points[None], device=self.targets[side].device, dtype=self.targets[side].dtype)
+            view.set_sim_nodal_positions(state, indices)
+            view.set_sim_nodal_velocities(torch.zeros_like(state), indices)
+        self._last_target_points = [None, None]
+        if hasattr(self, "fixtures"):
+            self.fixtures.reset_to_mounts(mounts)
+        self.follow(mounts)
+
     def follow(self, mounts):
         import torch
         from pxr import Gf
         self.mounts = validate_mount_poses(mounts)
+        if hasattr(self, "fixtures"):
+            self.fixtures.follow(self.mounts)
         for side, (view, targets, indices) in enumerate(zip(self.views, getattr(self, "targets", []), getattr(self, "indices", []))):
             pose = self.mounts[side]
             points = transform_points(self.local_nodes[side], pose[:3, 3], pose[:3, :3]).astype(np.float32)
@@ -259,6 +303,12 @@ class MountedSoftTool:
         # can see the previous render's finger geometry from the current pose.
         # World.render() flushes Fabric without advancing physics; a zero-time
         # Replicator step alone does not perform that flush in Isaac Sim 5.1.
+        # IsaacLab's headless NO_GUI_OR_RENDERING mode makes render() a no-op.
+        # Replicator still renders, so explicitly flush Fabric first; otherwise
+        # robot/object images can remain at reset while recorded joints move.
+        forward = getattr(world, "forward", None)
+        if forward is not None:
+            forward()
         world.render()
         rep.orchestrator.step(rt_subframes=self.render_settings["rt_subframes"],
                               delta_time=0., pause_timeline=False, wait_for_render=True)

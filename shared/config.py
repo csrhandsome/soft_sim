@@ -8,15 +8,36 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def shore_a_to_young_modulus_pa(hardness):
+    """Gent (1958) indentation estimate; not a calibrated TPU tensile modulus."""
+    if not math.isfinite(hardness) or not 0 < hardness < 100:
+        raise ValueError("Shore A hardness must be finite and in (0, 100)")
+    return 1e6 * 0.0981 * (56 + 7.66 * hardness) / (0.137505 * (254 - 2.54 * hardness))
+
+
 @dataclass
 class MaterialConfig:
-    name: str = "Bambu TPU 85A (isotropic initial approximation)"
-    density_kg_m3: float = 1180.0
-    young_modulus_pa: float = 5.2e6  # TDS Z direction; XY is 6.8 MPa.
+    name: str = "Bambu TPU 75A (TDS density; estimated isotropic modulus)"
+    shore_a: float = 75.0
+    modulus_basis: str = "Gent 1958 Shore A indentation estimate; not a measured TPU tensile modulus"
+    color_name: str = "PANTONE Orange 021 U"
+    color_srgb: tuple[float, float, float] = (1.0, 108 / 255, 47 / 255)
+    density_kg_m3: float = 1170.0
+    young_modulus_pa: float = shore_a_to_young_modulus_pa(75.0)
     poisson_ratio: float = 0.45  # Assumption, not a published Bambu value.
     friction: float = 0.7  # Assumption; calibrate against the actual object surface.
     damping: float = 0.0001  # Backend mapping is recorded in each episode.
-    source: str = "https://cdn.shopify.com/s/files/1/0645/5876/0155/files/Bambu_TPU_85A_Technical_Data_Sheet_a7233668-497b-487f-af8a-3adb49fafaa1.pdf"
+    source: str = "https://store.bblcdn.eu/s8/default/6c98f7913de24007b54cb75052cd39b5/Bambu_TPU_75A-TDS.pdf"
+    modulus_source: str = "https://doi.org/10.5254/1.3542351"
+    measured_hardness_shore_a: tuple[float, float] = (76.0, 1.0)
+    tensile_strength_xy_pa: float = 11.5e6
+    elongation_at_break_xy_min: float = 8.0
+
+    @property
+    def color_linear(self):
+        """USD displayColor uses linear RGB; UI color references use sRGB."""
+        return tuple(c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4
+                     for c in self.color_srgb)
 
 
 @dataclass
@@ -130,6 +151,10 @@ class ExperimentConfig:
                 raise ValueError("Configuration contains NaN or infinity")
 
         finite_tree(asdict(self))
+        if not 0 < self.material.shore_a < 100:
+            raise ValueError("Shore A must be in (0, 100)")
+        if len(self.material.color_srgb) != 3 or any(not 0 <= c <= 1 for c in self.material.color_srgb):
+            raise ValueError("Material sRGB color must have three channels in [0, 1]")
         if self.simulation.scene_preset not in ('plain', 'studio', 'workshop', 'kitchen'):
             raise ValueError('Unknown scene preset')
         if self.simulation.deformable_vertex_velocity_damping is not None and self.simulation.deformable_vertex_velocity_damping < 0:

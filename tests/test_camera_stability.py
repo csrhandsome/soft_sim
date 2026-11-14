@@ -13,7 +13,7 @@ except ModuleNotFoundError:
 
 if cv2 is not None:
     from benchmarks.check_camera_stability import check, feature_motion
-    from benchmarks.episode_recording import EpisodeRecorder
+    from benchmarks.old_episode_recording import EpisodeRecorder
     from benchmarks.validate_rgb_episode import validate
 
 
@@ -73,6 +73,38 @@ class CameraStabilityMeasurements(unittest.TestCase):
         self.assertTrue(report["hold_projected_motion_valid"])
         self.assertFalse(report["camera_rgb_hold_stability_valid"])
         self.assertFalse(report["valid"])
+
+    def test_data_integrity_alone_does_not_pass_episode_quality(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory) / "recording"
+            recorder = EpisodeRecorder(folder, 25., dict(
+                finger_resolution=[256, 256], external_resolution=[256, 256]))
+            image = self.texture()
+            for index in range(2):
+                recorder.append(image, image, image, time_s=.04 * (index + 1), phase="hold",
+                    joint_positions=np.zeros(9), joint_velocities=np.zeros(9), commanded_joint_positions=np.zeros(9),
+                    object_position=np.zeros(3), object_orientation_wxyz=np.array([1., 0., 0., 0.]),
+                    finger_camera_to_world=np.repeat(np.eye(4)[None], 2, axis=0))
+            recorder.close(complete=True, result=dict(success=True))
+            report = validate(folder)
+            self.assertTrue(report["data_integrity_valid"])
+            self.assertTrue(report["grasp_success"])
+            self.assertFalse(report["quality_checks_complete"])
+            self.assertIn("camera_fem_projection_valid", report["missing_quality_checks"])
+            self.assertFalse(report["valid"])
+            (folder / "camera_projection_validation.json").write_text(json.dumps(dict(
+                valid=True, initial_projection_valid=True, motion_sync_valid=True)))
+            (folder / "fem_camera_projection_validation.json").write_text(json.dumps(dict(valid=True)))
+            (folder / "finger_motion_validation.json").write_text(json.dumps(dict(valid=True,
+                camera_mount_valid=True, clamp_valid=True, physics_initialization_valid=True,
+                hold_projected_motion_valid=True)))
+            (folder / "camera_stability_validation.json").write_text(json.dumps(dict(valid=True)))
+            self.assertTrue(validate(folder)["valid"])
+            (folder / "camera_projection_validation.json").write_text(json.dumps(dict(
+                valid=True, initial_projection_valid=True, motion_sync_valid=None)))
+            report = validate(folder)
+            self.assertFalse(report["valid"])
+            self.assertEqual(report["missing_quality_checks"], ["camera_motion_sync_valid"])
 
 
 if __name__ == "__main__":

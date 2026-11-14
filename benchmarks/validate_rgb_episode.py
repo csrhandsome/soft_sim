@@ -1,4 +1,4 @@
-"""Check synchronized raw RGB/state frames and decode all four episode MP4s."""
+"""Check RGB/state integrity and require the independent sensor/physics audits."""
 import argparse
 import json
 from pathlib import Path
@@ -6,6 +6,10 @@ import sys
 
 import cv2
 import numpy as np
+try:
+    from benchmarks.episode_reader import open_frame, _dataset
+except ModuleNotFoundError:
+    from episode_reader import open_frame, _dataset
 
 
 def validate(folder):
@@ -19,7 +23,7 @@ def validate(folder):
     minima = {name: float("inf") for name in episode["camera_order"]}
     for index, row in enumerate(rows):
         assert row["index"] == index
-        with np.load(folder / row["file"], allow_pickle=False) as frame:
+        with open_frame(folder, row) as frame:
             assert abs(float(frame["time_s"]) - row["time_s"]) < 1e-8
             for name in minima:
                 rgb = frame[name]
@@ -30,11 +34,21 @@ def validate(folder):
             for name in ("joint_positions", "joint_velocities", "commanded_joint_positions",
                          "object_position", "object_orientation_wxyz", "finger_camera_to_world"):
                 assert np.isfinite(frame[name]).all(), f"Non-finite state: {name}"
-            assert frame["joint_positions"].shape == (9,)
+            joint_count = len(episode["calibration"].get("joint_names", range(9)))
+            assert frame["joint_positions"].shape == (joint_count,)
             assert frame["finger_camera_to_world"].shape == (2, 4, 4)
     videos = {}
-    for name in (*episode["camera_order"], "episode"):
-        video = cv2.VideoCapture(str(folder / (name + ".mp4")))
+    if episode.get("storage_format") == "lerobot_v3":
+        dataset, _ = _dataset(str(folder.resolve()))
+        assert dataset.meta.info["codebase_version"] == "v3.0"
+        entry = dataset.meta.episodes[episode["episode_index"]]
+        assert int(entry["length"]) == len(rows)
+        video_paths = {name: dataset.root / dataset.meta.get_video_file_path(
+            episode["episode_index"], "observation.images." + name) for name in episode["camera_order"]}
+    else:
+        video_paths = {name: folder / (name + ".mp4") for name in (*episode["camera_order"], "episode")}
+    for name, path in video_paths.items():
+        video = cv2.VideoCapture(str(path))
         assert video.isOpened(), f"Cannot open {name} MP4"
         fps = video.get(cv2.CAP_PROP_FPS)
         assert abs(fps - episode["fps"]) < 1e-6
@@ -47,11 +61,14 @@ def validate(folder):
             assert image.shape[:2] == (size[1], size[0])
             decoded += 1
         video.release()
-        assert decoded == len(rows), f"{name}: decoded {decoded}, expected {len(rows)}"
+        # v3 shards may contain several episodes. Every image of this episode
+        # was already decoded at its metadata timestamp by open_frame above.
+        assert decoded >= len(rows) if episode.get("storage_format") == "lerobot_v3" else decoded == len(rows)
         videos[name] = dict(frames=decoded, fps=fps, resolution=size)
     report = dict(valid=True, data_integrity_valid=True,
                   camera_projection_valid=None,
                   camera_motion_sync_valid=None,
+                  camera_fem_projection_valid=None,
                   camera_mount_valid=None,
                   clamp_valid=None,
                   physics_initialization_valid=None,
@@ -68,6 +85,11 @@ def validate(folder):
         report["camera_motion_sync_valid"] = camera_checks.get("motion_sync_valid")
         report["valid"] = camera_checks["valid"]
     motion_report = folder / "finger_motion_validation.json"
+    fem_projection_report = folder / "fem_camera_projection_validation.json"
+    if fem_projection_report.is_file():
+        fem_projection = json.loads(fem_projection_report.read_text())
+        report["camera_fem_projection_valid"] = fem_projection["valid"]
+        report["valid"] = report["valid"] and fem_projection["valid"]
     if motion_report.is_file():
         motion_checks = json.loads(motion_report.read_text())
         report["camera_mount_valid"] = motion_checks["camera_mount_valid"]
@@ -80,6 +102,12 @@ def validate(folder):
         stability_checks = json.loads(stability_report.read_text())
         report["camera_rgb_hold_stability_valid"] = stability_checks["valid"]
         report["valid"] = report["valid"] and stability_checks["valid"]
+    required = ("camera_projection_valid", "camera_motion_sync_valid", "camera_fem_projection_valid",
+                "camera_mount_valid", "clamp_valid", "physics_initialization_valid",
+                "hold_projected_motion_valid", "camera_rgb_hold_stability_valid")
+    report["missing_quality_checks"] = [name for name in required if report[name] is None]
+    report["quality_checks_complete"] = not report["missing_quality_checks"]
+    report["valid"] = bool(report["valid"] and all(report[name] is True for name in required))
     (folder / "validation.json").write_text(json.dumps(report, indent=2))
     return report
 

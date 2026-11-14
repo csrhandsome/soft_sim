@@ -1,6 +1,10 @@
 # Soft Sim：RoboDojo 软夹爪
 
 主仿真使用 RoboDojo / Isaac Sim 5.1；软手指、双相机、规划 TCP 与原有测试保持可用。
+当前两指统一 Orange 021 U，材料为拓竹 TPU 75A（官方密度、单独标记的估算弹性模量），采集默认使用 LeRobot v3；[参数来源、数据环境与官方任务适配](docs/tpu75a-lerobot-v3.md)。
+保留原双 X5、只替换末端并等比缩放的移植入口见 [原生 X5 软指适配](docs/robodojo-native-x5.md)。
+当前安装默认采用 0.75 倍、对称内倾约 12°和楔块，测量、全行程与物理复核见
+[倾斜安装验证](docs/x5-tilted-installation-2026-11-14.md)。
 根目录不再有 `isaacsim/`、`mujoco/` 两个独立项目。保留的后端代码位于 `backends/isaac_sim/`、`backends/mujoco_sim/`，测试没有删减。
 
 ## 安装
@@ -14,6 +18,7 @@
 | `envs/planning/pyproject.toml` | 3.10 | `envs/planning/.venv` | mplib、SAPIEN、软夹爪规划 |
 | `envs/robodojo/pyproject.toml` | 3.11 | `envs/robodojo/.venv` | Isaac Sim 5.1、IsaacLab、CuRobo |
 | `envs/meshing/pyproject.toml` | 3.11 | `envs/meshing/.venv` | 可选 TetGen 贴合四面体网格生成 |
+| `envs/dataset/pyproject.toml` | 3.11 | `envs/dataset/.venv` | LeRobot v3 写入、读取与视频/FEM 数据验证 |
 
 ```bash
 bash scripts/clone_benchmarks.sh all

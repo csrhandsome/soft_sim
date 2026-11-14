@@ -71,7 +71,7 @@ class IsaacSimGripperEnv(BaseGripperEnv):
         light = UsdLux.DomeLight.Define(self.stage, '/World/Light')
         light.CreateIntensityAttr(900.)
         if not deformableUtils.add_deformable_material(
-            self.stage, '/World/TPU85A', density=cfg.material.density_kg_m3,
+            self.stage, '/World/TPU', density=cfg.material.density_kg_m3,
             youngs_modulus=cfg.material.young_modulus_pa, poissons_ratio=cfg.material.poisson_ratio,
             static_friction=cfg.material.friction, dynamic_friction=cfg.material.friction,
         ):
@@ -85,7 +85,7 @@ class IsaacSimGripperEnv(BaseGripperEnv):
             mesh = UsdGeom.TetMesh.Define(self.stage, path)
             mesh.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(points.astype(np.float32)))
             mesh.GetTetVertexIndicesAttr().Set(Vt.Vec4iArray.FromNumpy(self.mesh.tets.astype(np.int32)))
-            mesh.CreateDisplayColorAttr([Gf.Vec3f(.12, .70, .76) if side == 0 else Gf.Vec3f(.92, .54, .20)])
+            mesh.CreateDisplayColorAttr([Gf.Vec3f(*cfg.material.color_linear)])
             if not deformableUtils.set_physics_volume_deformable_body(self.stage, mesh.GetPath()):
                 raise RuntimeError(f'Failed to create volume deformable {path}')
             prim = mesh.GetPrim()
@@ -97,7 +97,7 @@ class IsaacSimGripperEnv(BaseGripperEnv):
             for key, value in dict(selfCollision=False, solverPositionIterationCount=cfg.simulation.solver_iterations,
                                    linearDamping=cfg.material.damping, sleepThreshold=0., settlingThreshold=0.).items():
                 prim.GetAttribute(f'physxDeformableBody:{key}').Set(value)
-            physicsUtils.add_physics_material_to_prim(self.stage, prim, '/World/TPU85A')
+            physicsUtils.add_physics_material_to_prim(self.stage, prim, '/World/TPU')
             self.views.append(DeformablePrim(path))
             self.estimators.append(QuasistaticForceEstimator(points, self.mesh.tets, self.pin_mask,
                                                             cfg.material, gravity))

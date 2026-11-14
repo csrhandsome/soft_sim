@@ -4,11 +4,16 @@ No displacement amplification or physics changes. Local stretch is invariant
 to rigid rotation; the best rigid fit is a diagnostic, not a correction.
 """
 import argparse
+from contextlib import ExitStack
 import json
 from pathlib import Path
 import sys
 
 import numpy as np
+try:
+    from benchmarks.episode_reader import open_frame
+except ModuleNotFoundError:
+    from episode_reader import open_frame
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from shared.mesh import load_stl, tet_volumes, contains_points
@@ -54,8 +59,9 @@ def audit(folder, output, maximum_pin_error_mm=.01):
     stl_volume = abs(np.einsum('ij,ij->i', vertices[faces[:, 0]],
         np.cross(vertices[faces[:, 1]], vertices[faces[:, 2]])).sum() / 6)
     references = np.load(recording / 'finger_reference.npz', allow_pickle=False)
-    state = np.load(recording / row['file'], allow_pickle=False)
-    baseline = np.load(recording / before['file'], allow_pickle=False)
+    frames = ExitStack()
+    state = frames.enter_context(open_frame(recording, row, include_images=False))
+    baseline = frames.enter_context(open_frame(recording, before, include_images=False))
     sides, arrays = {}, {}
     edges = np.unique(np.sort(faces[:, [[0, 1], [1, 2], [2, 0]]].reshape(-1, 2), axis=1), axis=0)
     # STL ribs are at constant Z; longitudinal rails must not be reported as ribs.
@@ -71,7 +77,7 @@ def audit(folder, output, maximum_pin_error_mm=.01):
     reference_volumes = {name: tet_volumes(references['finger_reference_' + name],
                                           references['finger_tets_' + name]) for name in ('left', 'right')}
     for frame_row in episode['frames']:
-        with np.load(recording / frame_row['file'], allow_pickle=False) as f:
+        with open_frame(recording, frame_row, include_images=False) as f:
             for side, name in enumerate(('left', 'right')):
                 pose = f['finger_mounts'][side]
                 x = (f['finger_nodes_' + name] - pose[:3, 3]) @ pose[:3, :3]
@@ -140,7 +146,7 @@ def audit(folder, output, maximum_pin_error_mm=.01):
               'Volume agreement and positive Jacobians do not establish mesh convergence or real-world accuracy.')
     (output / 'clamp_deformation.json').write_text(json.dumps(report, indent=2))
     np.savez_compressed(output / 'clamp_deformation.npz', **arrays)
-    references.close(); state.close(); baseline.close()
+    references.close(); frames.close()
     return report
 
 
@@ -202,7 +208,7 @@ def profile_video(folder, output):
         raise RuntimeError('Cannot create profile video')
     try:
         for row in episode['frames']:
-            with np.load(recording / row['file'], allow_pickle=False) as f:
+            with open_frame(recording, row) as f:
                 for side, (ax, artist, name) in enumerate(zip(axes, artists, ('left', 'right'))):
                     pose = f['finger_mounts'][side]
                     local = (f['finger_nodes_' + name] - pose[:3, 3]) @ pose[:3, :3]

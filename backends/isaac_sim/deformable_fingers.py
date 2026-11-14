@@ -22,7 +22,7 @@ def create_fingers(stage, config, mesh, poses, paths, material_path):
         volume = UsdGeom.TetMesh.Define(stage, path)
         volume.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(points.astype(np.float32)))
         volume.GetTetVertexIndicesAttr().Set(Vt.Vec4iArray.FromNumpy(mesh.tets.astype(np.int32)))
-        volume.CreateDisplayColorAttr([Gf.Vec3f(.12, .70, .76) if side == 0 else Gf.Vec3f(.92, .54, .20)])
+        volume.CreateDisplayColorAttr([Gf.Vec3f(*config.material.color_linear)])
         if not deformableUtils.set_physics_volume_deformable_body(stage, volume.GetPath()):
             raise RuntimeError(f'Failed to create volume deformable {path}; Isaac Sim 6.2 is required')
         prim = volume.GetPrim()
