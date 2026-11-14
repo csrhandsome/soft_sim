@@ -1,0 +1,18 @@
+{
+  "task": {
+    "name": "general_pickup",
+    "seed": 22,
+    "active_arm": 1,
+    "finger_scale": 0.75,
+    "target_label": "target"
+  },
+  "planning": {
+    "friction": 0.51,
+    "indent_m": 0.008,
+    "lift_height_m": 0.14,
+    "max_attempts": 96
+  },
+  "recording": {
+    "fps": 20
+  }
+}

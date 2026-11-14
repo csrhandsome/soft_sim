@@ -1,0 +1,22 @@
+{
+  "name": "Bambu TPU 90A (TDS XY modulus; isotropic simulation approximation)",
+  "shore_a": 90.0,
+  "modulus_basis": "Bambu TPU 90A TDS V1.0: XY 5.3 +/- 0.7 MPa; Z 4.4 +/- 0.6 MPa; XY used isotropically",
+  "color_name": "西瓜红 / Blaze (51901), red endpoint #D21B3C",
+  "color_srgb": [
+    0.8235294117647058,
+    0.10588235294117647,
+    0.23529411764705882
+  ],
+  "density_kg_m3": 1240.0,
+  "young_modulus_pa": 5300000.0,
+  "poisson_ratio": 0.45,
+  "friction": 0.7,
+  "damping": 0.0001,
+  "source": "https://store.bblcdn.com/s6/default/62f87cb83a1e47a58c73c73240f8410a/Bambu_TPU_90A_Technical_Data_Sheet_582bf8f6-1f0a-474c-aeda-9e72af3689dc.pdf",
+  "modulus_source": "https://store.bblcdn.com/s6/default/62f87cb83a1e47a58c73c73240f8410a/Bambu_TPU_90A_Technical_Data_Sheet_582bf8f6-1f0a-474c-aeda-9e72af3689dc.pdf",
+  "color_source": "https://eu.store.bambulab.com/products/tpu-85a-tpu-90a",
+  "measured_hardness_shore_a": null,
+  "tensile_strength_xy_pa": 12500000.0,
+  "elongation_at_break_xy_min": 6.5
+}

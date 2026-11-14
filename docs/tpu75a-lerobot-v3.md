@@ -1,10 +1,14 @@
 # TPU 75A、Orange 021 U 与 LeRobot v3
 
+> **路径变更（2026-11-14 重构）**：日常入口改为 `python scripts/run.py <command>`，实现位于 `src/soft_sim/`，生成物位于 `artifacts/`。本文保留写作时的目录与命令，当前命令见 [README](../README.md)。
+
+
 ## 材料来源
 
 拓竹官方产品为 **TPU 75A (2.85mm)**。数据来自产品页面链接的
 [TDS V1.0](https://store.bblcdn.eu/s8/default/6c98f7913de24007b54cb75052cd39b5/Bambu_TPU_75A-TDS.pdf)，
-本地提取文本保存在 `data/materials/Bambu_TPU_75A-TDS.txt`，原始 PDF 同目录保留但不提交。
+本地原始 PDF 与提取文本统一保存在 `assets/materials/bambu_tpu_75a.tds.pdf`
+和 `assets/materials/bambu_tpu_75a.tds.txt`，参数预设为同目录的 `bambu_tpu_75a.json`。
 
 | 参数 | 官方 TDS |
 | --- | --- |
@@ -96,36 +100,22 @@ envs/dataset/.venv/bin/python benchmarks/check_camera_stability.py OUTPUT/record
 
 ## 官方任务接入
 
-**2026-11-13：** 已新增保留原双 X5、替换原生滑块指体及等比缩放的路径，详见
-[原生 X5 软指适配](robodojo-native-x5.md)。下文 Franka 是此前的接入方式；新入口默认 `--robot x5`，
-复现下文旧命令时应显式加 `--robot franka --finger-scale 1`。
+**2026-11-14：** 任务实现已统一为原双 X5 + `measured_wedge_v3` 安装，唯一入口是
+`benchmarks/robodojo_task_soft.py`，详见 [原生 X5 软指适配](robodojo-native-x5.md) 与
+[倾斜安装验证](x5-tilted-installation-2026-11-14.md)。下文 Franka 命令与
+`robodojo_soft_pick.py` 均已被移除，只作为历史记录。
 
-过去 `robodojo_soft_pick.py` 是资产演示，未启动官方任务管理器。已有有效的几何改进见
+过去的几何改进见
 [规划说明](../benchmarks/SOFT_GRASP_PLANNING.md)：75 mm 掌部安装偏移、55 mm 接触高度、
 88.18 mm 完整软指、姿态搜索、截面闭合开口、桌面/夹具碰撞、12 mm 试提和物体负载规划。
 新材料和新任务都须重新验证实际抓取，不沿用旧 85A 成功结论。
 
-新增 `benchmarks/robodojo_task_soft.py` 加载上游 task 类、保存布局、SceneManager、RobotManager 和 RewardManager。
-目前执行器实现 `general_pickup` 的接近、闭合、试提、抬升与保持，成功条件直接使用原任务的物体抬升 >10 cm。
-其他任务可按 `--task` 与 `--target-label` 导出原场景，完整多阶段执行器尚未实现。
+`benchmarks/robodojo_task_soft.py` 加载上游 task 类、保存布局、SceneManager、RobotManager 和 RewardManager。
+执行器实现 `general_pickup` 与 `stack_blocks` 的完整动作流程，成功条件直接使用原任务判定
+（`general_pickup` 为物体抬升 >10 cm；堆叠使用原分段评分）。
 
-这是 **Franka 软指 embodiment variant**：原布局为双 X5，当前换成一台已有安装验证的 Franka，
-保留原房间、桌面、目标、杂物、目标质量和尺寸。没有宣称已完成原双 X5 的末端替换或取得原 benchmark 分数。
-官方 CUDA 物体包装器返回 Torch，而奖励代码使用 NumPy，适配器只在位姿读取边界转换到 CPU 数组。
-
-```bash
-OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_task_soft.py \
-  --task general_pickup --mode export --output data/generated/general_pickup_scene
-
-envs/planning/.venv/bin/python benchmarks/plan_soft_grasp.py \
-  --scene data/generated/general_pickup_scene --lift-height .14 \
-  --output data/generated/general_pickup_plan
-
-OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_task_soft.py \
-  --task general_pickup --mode replay --grasp-plan data/generated/general_pickup_plan/plan.json \
-  --output data/generated/general_pickup_episode
-```
-
-必须先准备该布局引用的官方资产。新增场景导出包含实际目标和杂物几何；规划器支持非平移的机器人基座变换，
+命令与数据说明见 [根 README](../README.md) 和
+[LeRobot v3 采集](robodojo-rgb-collection.md)。必须先准备该布局引用的官方资产。
+场景导出包含实际目标和杂物几何；规划器支持非平移的机器人基座变换，
 并将其他刚体、相机支架作为凸包障碍物。房间墙体未加入该规划碰撞集合，碰撞检查范围在 scene.json 明示。
 软指底座随动，机械臂未接收 FEM 反作用力矩。计划成功不等于任务执行成功。

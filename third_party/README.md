@@ -1,6 +1,10 @@
 # 软指仿真参考源码
 
-这些目录是用户要求的本地 Git clone，保留各自 Git 历史和许可证，不将第三方源码提交到本项目。固定的实际提交见 [sources.json](sources.json)。未递归拉取各项目的构建子模块，也未安装其完整运行环境。
+其中 `RoboDojo/` 是项目唯一的任务仿真依赖：`pyproject.toml` 固定提交的源码快照（无 `.git`），
+由 `scripts/clone_benchmarks.sh` 准备；其 `third_party/IsaacLab`、`third_party/curobo` 是指向仓库根
+`.deps/` 的兼容链接。下面的目录是用户要求的本地 Git clone，保留各自 Git 历史和许可证。
+
+这些参考目录不提交到本项目历史。固定的实际提交见 [sources.json](sources.json)。未递归拉取各项目的构建子模块，也未安装其完整运行环境。
 
 | 目录 | 上游 | 本轮阅读重点 |
 | --- | --- | --- |

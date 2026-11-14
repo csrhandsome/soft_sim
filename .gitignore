@@ -1,43 +1,47 @@
+# Python and tooling
 .venv/
 .uv-cache/
 __pycache__/
 *.py[cod]
-data/runs/
-data/models/
-data/backups/
-MUJOCO_LOG.TXT
-
-# External checkouts and local tooling are managed outside the project history.
-/RoboDojo/
-/RoboTwin/
-/.agents/
-/.aws/
-/.codex/
-/.venv/
-/.uv-cache/
-.env
-.env.*
-!.env.example
-*.etli
-*.log
 .pytest_cache/
 build/
 dist/
 *.egg-info/
-data/generated/
+*.log
+MUJOCO_LOG.TXT
 
-# Downloaded scene assets and generated runs stay local. Keep the reference mesh.
-/data/scene_assets/
-/data/logs/
+# Local tooling and secrets are managed outside the project history.
+/.agents/
+/.aws/
+/.codex/
+.env
+.env.*
+!.env.example
 
-# TOML-managed third-party source snapshots.
+# Third-party source snapshots are prepared from pinned revisions.
 /.deps/
-
-# Reference repositories are cloned locally; track their manifest and notes.
 /third_party/*/
-data/materials/Bambu_TPU_75A-TDS.pdf
-.gitignore
 
+# Input assets that must be downloaded; the reference mesh and material notes stay tracked.
+/assets/downloads/
+# Searchable TDS text is regenerated from the locally downloaded PDFs.
+/assets/materials/*.tds.txt
+
+# Every generated artifact lives under one storage root and stays local.
+/artifacts/
+
+# Historical outputs that predate the storage root. Read-only migration input.
+/data/generated/
+/data/runs/
 /data/datasets/
-*.png
-*.mp4
+/data/logs/
+/data/scene_assets/
+/data/backups/
+/data/models/
+/data/materials/Bambu_TPU_75A-TDS.pdf
+
+# Root-level requested videos and their generated preview metadata stay local.
+/*.png
+/*.mp4
+/*.json
+*.pdf

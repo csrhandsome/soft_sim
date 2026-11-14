@@ -1,9 +1,0 @@
-{
-  "gripper": {
-    "profile": "angular",
-    "base_separation_m": 0.10,
-    "open_angle_deg": 0.0,
-    "close_angle_range_deg": [15.0, 28.0],
-    "mount_tilt_range_deg": [0.0, 5.0]
-  }
-}

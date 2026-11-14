@@ -1,0 +1,25 @@
+{
+  "name": "Bambu TPU 75A (TDS density; estimated isotropic modulus)",
+  "shore_a": 75.0,
+  "modulus_basis": "Gent 1958 Shore A indentation estimate; not a measured TPU tensile modulus",
+  "color_name": "PANTONE Orange 021 U (legacy custom color)",
+  "color_srgb": [
+    1.0,
+    0.4235294117647059,
+    0.1843137254901961
+  ],
+  "density_kg_m3": 1170.0,
+  "young_modulus_pa": 7083728.093495241,
+  "poisson_ratio": 0.45,
+  "friction": 0.7,
+  "damping": 0.0001,
+  "source": "https://store.bblcdn.eu/s8/default/6c98f7913de24007b54cb75052cd39b5/Bambu_TPU_75A-TDS.pdf",
+  "modulus_source": "https://doi.org/10.5254/1.3542351",
+  "color_source": "legacy project appearance; not an official Bambu color specification",
+  "measured_hardness_shore_a": [
+    76.0,
+    1.0
+  ],
+  "tensile_strength_xy_pa": 11500000.0,
+  "elongation_at_break_xy_min": 8.0
+}

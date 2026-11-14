@@ -1,0 +1,32 @@
+{
+  "RoboDojo": {
+    "origin": "https://github.com/RoboDojo-Benchmark/RoboDojo.git",
+    "commit": "f57e1633ffed59761bc8e568cfe7530c4b33381c",
+    "local_compatibility_change": "third_party/IsaacLab/source/isaaclab/setup.py starlette==0.49.1 -> starlette>=0.45.3,<=0.49.1; Isaac Sim 5.1 remains at 0.45.3",
+    "previous_submodules": [
+      "-5d0be1499634d3176258c8f2e31f5fe816497b0a XPolicyLab",
+      " afca7b09d60d8beb9c1cb28b43066499940b969b third_party/IsaacLab (heads/main)",
+      " d17b54ce32cba095c0b000c4c58777075d11de0e third_party/curobo (remotes/origin/isaacsim-warp18)"
+    ],
+    "submodules": [],
+    "dependency_management": {
+      "manifest": "envs/robodojo/pyproject.toml",
+      "lock": "envs/robodojo/uv.lock",
+      "isaaclab": ".deps/IsaacLab",
+      "curobo": ".deps/curobo",
+      "installation": "editable source snapshots without git metadata"
+    },
+    "historical_checkout_patch": "patches/robodojo-no-submodules.patch",
+    "source_management": {
+      "kind": "pinned archive snapshot",
+      "manifest": "pyproject.toml",
+      "marker": "third_party/RoboDojo/.soft-sim-source.json",
+      "git_metadata": false
+    }
+  },
+  "validation": {
+    "run": "data/runs/soft_planned_grasp_55",
+    "scope": "one object, one FEM rollout; no official benchmark score",
+    "success": true
+  }
+}

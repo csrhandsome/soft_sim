@@ -1,8 +1,0 @@
-{
-  "object": {
-    "shapes": [],
-    "isaac_usd_assets": ["banana", "marker", "soup_can", "cracker_box"],
-    "radius_range_m": [0.014, 0.022],
-    "fixed": true
-  }
-}

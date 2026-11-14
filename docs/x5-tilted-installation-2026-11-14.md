@@ -1,5 +1,8 @@
 # X5 对称倾斜软指安装验证（2026-11-14）
 
+> **路径变更（2026-11-14 重构）**：日常入口改为 `python scripts/run.py <command>`，实现位于 `src/soft_sim/`，生成物位于 `artifacts/`。本文保留写作时的目录与命令，当前命令见 [README](../README.md)。
+
+
 当前默认选择 **0.75 倍软指、两侧各向内倾斜约 12°、独立楔形连接件**，配置版本为
 `measured_wedge_v3`。角度来自源 STL 的外侧抓取斜面法向，不来自示意图。
 原双 X5 的关节、滑块、限位、驱动及任务物体参数保持原值。
@@ -27,7 +30,7 @@
 倾斜底座的后角会靠近原腕部，因此根部沿原滑块前向前移 5.11868 mm，
 使底面最低角位于原滑块前方 2 mm。楔块底面位于原滑块安装平面，顶面随软指倾斜；
 底部采用不随软指缩放的 24 mm 原滑块安装座包络。第一次宽底楔块方案的结果保留在
-`data/generated/x5_stack0_measured_live_export`，不混作最终 v2 验证。
+`data/generated/x5_stack/exports/x5_stack0_measured_live_export`，不混作最终 v2 验证。
 
 直接调整安装角度会得到同样的软指位姿，但原滑块没有已确认的斜安装面，需加工或更换
 安装座；当前选择独立楔块来保留原滑块接口与运动学。这是仿真连接件包络，螺孔、紧固、
@@ -46,8 +49,8 @@
 
 对照图与机器可读报告：
 
-- `data/generated/x5_mount_v3_audit/closed_comparison.png`、`installation.json`
-- `data/generated/x5_measured_v3_finger_size_comparison/comparison.png`、`comparison.json`
+- `data/generated/x5_mount/x5_mount_v3_audit/closed_comparison.png`、`installation.json`
+- `data/generated/x5_mount/x5_measured_v3_finger_size_comparison/comparison.png`、`comparison.json`
 
 ## 静态行程与原驱动物理检查
 
@@ -58,7 +61,7 @@
 Lipschitz 下界补偿，0.75 倍完整连续行程的保守间隙下界约 3.347 mm。
 同侧楔块顶面与指底是预期安装接触；不再忽略新指/楔块与 `link6` 的碰撞。
 
-`data/generated/x5_stack0_measured_v3_native_assembly002` 是最终原 `stack_blocks_0` 场景诊断目录。
+`data/generated/x5_stack/scenes/x5_stack0_measured_v3_native_assembly002` 是最终原 `stack_blocks_0` 场景诊断目录。
 原驱动检查覆盖
 四指原驱动闭合、闭合保持、张开、张开保持，5 秒，保存 50 个真实 FEM 状态：
 
@@ -83,7 +86,7 @@ Lipschitz 下界补偿，0.75 倍完整连续行程的保守间隙下界约 3.34
 `x5_soft_tool.py`、任务 FEM 固定区、指内相机、实际 Isaac 楔块/相机碰撞形状和规划 URDF
 均使用它。两侧分别跟随原滑块实际位姿，支持非对称开合。任务元数据保存
 `finger_installation`、`finger_in_slide_transforms` 以及逐帧实际安装/相机矩阵。
-计划与实际安装配置不一致时拒绝执行；旧计划必须显式选择 `--mount-profile parallel_legacy`。
+计划与实际安装配置不一致时拒绝执行；统一入口不再提供旧平行安装选项，旧计划只作为历史数据保留。
 
 楔块与相机碰撞形状直接固定在原 `link8/link7` 刚体下，不另外驱动独立刚体。
 相机显示外壳使用 9 mm 开口与后盖，光学中心保持原值；规划和 PhysX 碰撞仍共用
@@ -98,7 +101,7 @@ Lipschitz 下界补偿，0.75 倍完整连续行程的保守间隙下界约 3.34
 接触闭合量、过期源网格/比例/安装座参数拒绝以及外壳全视场通光。
 共享几何 8 项、动作执行 6 项、挂载采集 1 项测试通过。
 
-`data/generated/x5_stack0_measured_v3_native_plan/plan.json` 使用本次真实导出的原场景，
+`data/generated/x5_stack/plans/x5_stack0_measured_v3_native_plan/plan.json` 使用本次真实导出的原场景，
 规划摩擦筛选系数 0.51、单侧预压 4 mm，通过首块的接近、闭合、试提、抬升、
 转移、放置、松爪、撤离和回位碰撞检查。抓取处刚性外廓到桌面约 2.044 mm；
 该间隙不保证变形后仍通过，因此文件保留 `physical_grasp_validated=false`。
@@ -113,17 +116,17 @@ Lipschitz 下界补偿，0.75 倍完整连续行程的保守间隙下界约 3.34
 ```bash
 MPLCONFIGDIR=/tmp/soft-sim-mpl OPENBLAS_NUM_THREADS=1 \
 envs/planning/.venv/bin/python benchmarks/check_x5_installation.py \
-  --output data/generated/x5_mount_v3_audit
+  --output data/generated/x5_mount/x5_mount_v3_audit
 
 MPLCONFIGDIR=/tmp/soft-sim-mpl OPENBLAS_NUM_THREADS=1 \
 envs/planning/.venv/bin/python benchmarks/test_soft_grasp_frames.py
 
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OMNI_KIT_ACCEPT_EULA=YES \
 envs/robodojo/.venv/bin/python benchmarks/robodojo_task_soft.py \
-  --task stack_blocks --seed 0 --mode assembly --robot x5 --finger-scale .75 \
-  --mount-profile measured --dt .001 --solver-iterations 80 \
+  --task stack_blocks --seed 0 --mode assembly --finger-scale .75 \
+  --dt .001 --solver-iterations 80 \
   --vertex-velocity-damping 20 --texture-max-resolution 512 \
-  --fem-mesh data/generated/soft_finger_tetgen_4mm.npz \
+  --fem-mesh data/generated/assets/mesh/soft_finger_tetgen_4mm.npz \
   --output data/generated/x5_measured_NEW_assembly
 
 MPLCONFIGDIR=/tmp/soft-sim-mpl OPENBLAS_NUM_THREADS=1 \
@@ -133,7 +136,7 @@ envs/planning/.venv/bin/python benchmarks/check_x5_assembly_motion.py \
 
 ## v2 抓取及相机问题记录
 
-`data/generated/x5_pickup22_measured_v2_collect001` 使用旧 v2 安装、0.75 倍软指、
+`data/generated/x5_pickup/measured/x5_pickup22_measured_v2_collect001` 使用旧 v2 安装、0.75 倍软指、
 原 `general_pickup_22` 布局与物体属性，通过原驱动完成实际抓取。接触高度 54.75 mm，
 规划摩擦筛选系数 0.51，单侧预压 8 mm；闭合总滑块参数约 32.633 mm。
 12 mm 试提时物体抬升约 11.033 mm，最终约 136.996 mm，原 RewardManager 返回 1。

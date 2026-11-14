@@ -1,83 +1,175 @@
-# Soft Sim：RoboDojo 软夹爪
+# Soft Sim：RoboDojo 双 X5 软指仿真
 
-主仿真使用 RoboDojo / Isaac Sim 5.1；软手指、双相机、规划 TCP 与原有测试保持可用。
-当前两指统一 Orange 021 U，材料为拓竹 TPU 75A（官方密度、单独标记的估算弹性模量），采集默认使用 LeRobot v3；[参数来源、数据环境与官方任务适配](docs/tpu75a-lerobot-v3.md)。
-保留原双 X5、只替换末端并等比缩放的移植入口见 [原生 X5 软指适配](docs/robodojo-native-x5.md)。
-当前安装默认采用 0.75 倍、对称内倾约 12°和楔块，测量、全行程与物理复核见
-[倾斜安装验证](docs/x5-tilted-installation-2026-11-14.md)。
-根目录不再有 `isaacsim/`、`mujoco/` 两个独立项目。保留的后端代码位于 `backends/isaac_sim/`、`backends/mujoco_sim/`，测试没有删减。
+本项目只有一条实现路径：**RoboDojo 原任务场景 + Isaac Sim 5.1 + 原双 X5，仅替换末端软指**。
+任务类、官方布局、机器人资产、物体与材质、成功／评分条件全部来自固定提交的 RoboDojo 快照
+（`third_party/RoboDojo/`）。软指网格、安装倾角与楔块、指内相机、运动规划、LeRobot v3
+采集和独立质量复核是本项目新增的部分。
 
-## 安装
+软指默认材料为 **拓竹 TPU 90A 西瓜红（51901 / Blaze）**，密度 1240 kg/m³、
+杨氏模量 5.3 MPa（官方 TDS XY 值的各向同性近似），配色为深红端 `#D21B3C`。
+75A、85A、90A 采用同一套资产格式，来源和假设见 [资产说明](assets/README.md)。
+85A 沿用西瓜红自定义外观，可用 `--material bambu_tpu_85a` 切换；默认仍为 90A。
 
-在 Linux x86_64 上安装 uv，准备 curl，并使用系统 Python 3.12 运行准备脚本。
-当前软夹爪运行与回归流程的 Python 依赖由 TOML 和各项目的 `uv.lock` 管理：
+- 用户入口只有一个：`scripts/run.py`。实现全部在 `src/soft_sim/`。
+- 机器人固定为原双 X5，安装固定为 `measured_wedge_v3`（0.75 倍、双侧内倾约 12°、楔块）。
+- 默认通过原机械臂驱动执行；直接改写关节状态的回放只用于诊断。
+- 任务成功由 RoboDojo 原 `RewardManager` 判定，场景加载或规划成功都不算成功。
+- 任务成败、录制提交和质量验收是三个独立字段，不互相冒充。
 
-| 配置 | Python | 环境 | 用途 |
+## 快速开始
+
+```bash
+bash scripts/sync_envs.sh all          # 四个必需环境
+bash scripts/sync_envs.sh meshing      # 可选：TetGen 网格
+python scripts/run.py doctor           # 解释器、包、源码与资产状态
+python scripts/run.py test             # unit + planning + dataset 三组回归
+```
+
+`sync_envs.sh` 按各环境自己的锁文件同步，然后把同一份 `soft-sim` 以 editable 方式装入
+每个解释器；环境之间不共享 NumPy 版本，也不做统一求解。
+
+```bash
+python scripts/run.py collect --config configs/general_pickup.json --seed 22 \
+  --dataset-id x5_pickup_v1
+python scripts/run.py validate --run-id <run_id>
+python scripts/run.py preview  --run-id <run_id>
+# 三视角派生视频（桌面相机 + 左右指内相机），写到指定路径
+python scripts/run.py preview --run-id <run_id> --video previews/three_views.mp4
+python scripts/run.py finalize --run-id <run_id>
+```
+
+每条命令结束时打印 `run_id`、run 目录、正式数据集位置与 episode 索引（如果产生了数据集）。
+只导出场景或做安装检查的命令不会打印虚构的数据集路径。
+根目录三视角视频的生成方法见 [简短说明](docs/three-view-video.md)。
+
+## 命令
+
+| 命令 | 用途 | 环境 |
+|---|---|---|
+| `collect` | 原场景规划、执行、暂存、转换 | RoboDojo → planning / dataset |
+| `export-scene` | 只导出场景几何 | RoboDojo |
+| `replay` | 在匹配场景执行已保存计划 | RoboDojo |
+| `assembly` | 原驱动全行程安装诊断 | RoboDojo |
+| `plan` | 对已导出场景做 mplib 规划 | planning |
+| `check-installation` | 安装几何、间隙与碰撞检查 | planning |
+| `prepare-mesh` | 生成贴合四面体网格 | core / meshing |
+| `finalize` | 已暂存采集写入 LeRobot | dataset |
+| `validate` | 组织数据、相机、FEM、碰撞与任务验收 | core 编排 |
+| `preview` | 从运行生成派生预览图或三视角视频 | dataset |
+| `download-assets` | 下载固定输入资产 | core |
+| `setup-sources` | 准备固定版本的第三方源码 | core |
+| `migrate` | 列出／复制重构前生成物（默认 dry-run） | core |
+| `test` | 按组执行测试 | 按组分发 |
+| `doctor` | 检查解释器、包、源码与路径 | core |
+
+## 环境
+
+| 环境 | Python | 关键依赖 | 职责 |
 |---|---|---|---|
-| `pyproject.toml` | 3.12 | `.venv` | 共享逻辑、MuJoCo 4.0 回归 |
-| `envs/planning/pyproject.toml` | 3.10 | `envs/planning/.venv` | mplib、SAPIEN、软夹爪规划 |
-| `envs/robodojo/pyproject.toml` | 3.11 | `envs/robodojo/.venv` | Isaac Sim 5.1、IsaacLab、CuRobo |
-| `envs/meshing/pyproject.toml` | 3.11 | `envs/meshing/.venv` | 可选 TetGen 贴合四面体网格生成 |
-| `envs/dataset/pyproject.toml` | 3.11 | `envs/dataset/.venv` | LeRobot v3 写入、读取与视频/FEM 数据验证 |
+| `.venv`（core） | 3.12 | NumPy 2.3.4、SciPy 1.16.3 | 配置、存储、调度、单元测试 |
+| `envs/planning` | 3.10 | mplib、SAPIEN、NumPy 1.26.4 | 碰撞规划与安装检查 |
+| `envs/robodojo` | 3.11 | Isaac Sim 5.1、IsaacLab、CuRobo | 任务场景、物理仿真、采集 |
+| `envs/dataset` | 3.11 | LeRobot 0.4、NumPy 2.x | 数据集读写与复核 |
+| `envs/meshing` | 3.11 | TetGen、PyVista | 可选网格生成；不在 `all` 中 |
 
-```bash
-bash scripts/clone_benchmarks.sh all
-bash scripts/sync_envs.sh all --locked
+解释器路径只由 `src/soft_sim/runtime.py` 提供，其他模块不得拼接 `.venv/bin/python`。
+需要外部解释器时用 `SOFT_SIM_<ENV>_PYTHON` 显式覆盖，不会静默退回系统 Python。
+
+## 配置只有一套规则
+
+```text
+代码中的类型化默认值  <  一个任务 JSON 的局部覆盖  <  显式 CLI 参数
 ```
 
-同步脚本默认检查锁文件并精确同步，不保留锁文件以外的包。
-两个 benchmark 环境建在 `envs/` 下，与源码 checkout 分离；旧的 `RoboTwin/.venv`、`RoboDojo/.venv` 保留供回退，不再作为默认运行环境。
-规划环境只包含本项目实际使用的 SAPIEN / mplib 流程；上游策略评测、语言描述生成、训练及全量任务未纳入这套环境。
+- 嵌套对象按字段合并，数组整体替换；未知字段、类型错误、非法范围立即报错。
+- CLI 未指定的参数不会用 argparse 默认值覆盖配置文件。
+- 校验在启动 Isaac Sim 之前完成。
+- 每次运行写 `config.resolved.json`，记录完整有效参数与 CLI 覆盖。
 
-RoboDojo / RoboTwin 也使用根 TOML 固定提交的源码快照，目录内没有 `.git` 或 `.gitmodules`。
-兼容入口 `scripts/clone_benchmarks.sh` 现在下载提交归档，不执行 Git 克隆或子模块命令；已登记快照重复执行时直接复用，不覆盖未知目录。
-IsaacLab 与 CuRobo 由 `scripts/prepare_sources.py` 按固定提交准备到 `.deps/`，再通过 TOML 中的 editable sources 安装。
-这里使用源码快照，以保留 IsaacLab 的 config/data 与 CuRobo 的 YAML/CUDA 资源；`.deps/` 内没有 Git 仓库。
-IsaacLab 保留已验证的 Starlette 兼容约束；CuRobo 仅补充无 Git 元数据时的版本号。
-Isaac Sim 5.1 的跨平台 wheel 元数据有差异，Linux 专用 TOML 显式使用当前 Linux wheel 的依赖元数据，避免错误引入 pywin32。
-`patches/` 保留历史子模块移除补丁供查阅；当前归档准备脚本直接移除子模块登记，无需执行 Git 补丁命令；兼容路径 `RoboDojo/third_party/{IsaacLab,curobo}` 是到 `.deps/` 的链接。
-策略评测 XPolicyLab 不在当前软夹爪流程内，已取消登记。历史源码备份在 `data/backups/toml-migration-*/`；其中 Git 元数据已按要求清理。后来按用户新要求在 `third_party/` 克隆的软体仿真参考项目保留各自 `.git`，见 [源码清单与阅读记录](third_party/README.md)。
+`configs/` 只保留当前任务：`general_pickup.json`、`stack_blocks.json`。上游 RoboDojo 的
+`env_cfg/**/*.yml` 与 CuRobo YAML 由适配层读取，不复制成自有配置。
 
-仿真资产另外下载，克隆源码不会自动下载全量数据：
+## 生成物只有一个出口
 
-```bash
-python3 scripts/download_benchmark_assets.py --prefix Assets/Object/RoboDojo/Clutter/ball/00000
+默认存储根是 `artifacts/`，可用 `--storage-root /path/to/storage` 整体切换。
+
+```text
+artifacts/
+├── runs/<run_id>/                  单次执行：配置、场景、计划、暂存、报告、日志、预览
+├── datasets/lerobot/<dataset_id>/  正式 LeRobot 数据集
+└── cache/                          可重建的网格／资产缓存
 ```
 
-已有的机器人、木纹材质、物体资产和抓取计划保持原位置。完整资产说明见 [benchmark 说明](benchmarks/README.md)。
+`run_id` 形如 `20261114T080000Z_general-pickup_s22_a1b2c3`，创建时确定，不因成败改名；
+同名 run 目录禁止覆盖，重跑产生新 run。一次 run 的结构：
 
-## 验证与运行
-
-三路连续 RGB 与 MP4 采集见 [新软夹爪采集说明](docs/robodojo-rgb-collection.md)，支持两个夹爪相机和外部固定相机同步录制。
-STL 表面过疏造成的弯曲显示误差、材料初值与体网格对照见 [形变排查](docs/fem-deformation-2026-11-12.md)。
-参考实现、固定区与横梁分区检查，以及贴合体网格实验见 [贴合网格迭代](docs/conforming-fem-2026-11-12.md)。
-
-```bash
-# 全部单元测试、MuJoCo 真接触形变、双相机 RGB/depth 渲染
-SOFT_SIM_TEST_RENDER=1 MUJOCO_GL=egl .venv/bin/python -m unittest discover -s tests -v
-
-# 规划 URDF 的软指安装坐标和 TCP 一致性
-envs/planning/.venv/bin/python benchmarks/test_soft_grasp_frames.py
-
-# 历史成功结果独立复核
-envs/robodojo/.venv/bin/python benchmarks/validate_grasp_run.py
-
-# 实际 GPU CuRobo 轨迹规划
-envs/robodojo/.venv/bin/python benchmarks/check_robodojo_planner.py
-
-# 新一轮真实 FEM 抓取，不覆盖历史结果
-OMNI_KIT_ACCEPT_EULA=YES envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
-  --grasp-plan data/generated/soft_grasp_plan_55/plan.json \
-  --dt .001 --solver-iterations 80 --output data/runs/soft_planned_grasp_exact
-envs/robodojo/.venv/bin/python benchmarks/validate_grasp_run.py data/runs/soft_planned_grasp_exact
+```text
+manifest.json            执行/采集/任务/验收状态与产物索引
+config.resolved.json     完整参数快照
+scene/                   场景与几何（每个 operation 一份）
+plans/operation_000/     候选、plan、轨迹、碰撞代理
+capture/                 episode.json、finger_reference.npz、capture.partial.npy
+results/task.json        RewardManager 结论与检查点
+reports/<validation_id>/ 每次复核单独一份，不覆盖旧证据
+diagnostics/             无效 FEM 样本、静态探针
+previews/<preview_id>/   派生预览，不进入训练帧
+logs/                    子进程日志
 ```
 
-规划流程、原始结果和限制见 [软夹爪规划](benchmarks/SOFT_GRASP_PLANNING.md)。
-仿真物体保持自由刚体，没有绑定或吸附；单物体回归通过不代表跨物体成功率或官方 benchmark 分数。
-旧 Isaac Sim 6.2 后端源码保留供回归和参考；当前 RoboDojo 环境固定为 5.1，主入口是 `benchmarks/robodojo_soft_pick.py`。
+`dataset_id` 是显式集合名（例如 `x5_pickup_v1`），seed 是集合内的 episode。首次创建集合时
+记录 schema／安装／相机／FPS 兼容签名；签名不符时拒绝追加，要求新的 dataset ID。
+同一个集合同一时间只允许一个收尾写入器。
 
-本次迁移的命令、结果和限制见 [2026-11-11 验证记录](docs/verification-2026-11-11.md)。
+## 状态与失败恢复
 
-精确锁定环境的首次安装与回归结果见 [干净环境验证](docs/clean-environments-2026-11-11.md)。
+| 维度 | 取值 | 含义 |
+|---|---|---|
+| 执行 | created / running / completed / failed | 流程是否正常结束 |
+| 采集 | none / capturing / incomplete / staged / converting / committed / failed | 暂存与正式写入进度 |
+| 任务 | `task_success: true / false / null` | 官方 RewardManager 结论 |
+| 复核 | pending / passed / failed | 相机、数据、FEM、碰撞检查 |
+| 验收 | `accepted` | 任务成功且必要复核全部通过 |
 
-两个 benchmark 目录去除 Git 元数据的迁移、后续清理与验证见 [普通源码快照迁移](docs/plain-sources-2026-11-11.md)。
+- 完整但任务失败的 episode 保留并明确标记，不伪装成成功数据。
+- 未完成或损坏的采集保留在 run 的暂存区，不提交为正式 episode。
+- `finalize` 可重试：已提交的 run 返回原 episode 引用，不会重复追加；写入确认前不删除
+  `capture.partial.npy`。
+
+## 测试
+
+```bash
+python scripts/run.py test --group unit       # core
+python scripts/run.py test --group planning   # planning
+python scripts/run.py test --group dataset    # dataset
+python scripts/run.py test --group sim        # RoboDojo + GPU + 资产
+python scripts/run.py test --group meshing    # 可选
+```
+
+缺依赖或未运行时如实报告，不会被全 skip 掩盖成通过。
+
+## 目录
+
+| 路径 | 内容 |
+|---|---|
+| `scripts/run.py` | 唯一调度入口（仅标准库做初始解析） |
+| `scripts/sync_envs.sh` | 环境同步入口 |
+| `src/soft_sim/cli/` | 命令实现 |
+| `src/soft_sim/tasks/` | collect / assembly / 预览编排 |
+| `src/soft_sim/sim/` | Isaac 启动、相机、FEM 软指、场景导出、上游适配 |
+| `src/soft_sim/robots/x5/` | X5 安装几何、运动学、URDF/TCP 生成 |
+| `src/soft_sim/planning/` | mplib 规划与候选生成 |
+| `src/soft_sim/recording/` | 仿真端暂存、数据集端写入、收尾与读取 |
+| `src/soft_sim/validation/` | 质量指标、碰撞与验收实现 |
+| `src/soft_sim/{config,contracts,geometry,mesh,storage,runtime,execution}.py` | 公共基础模块 |
+| `assets/meshes/` | 受版本控制的源网格 |
+| `third_party/RoboDojo/` | 固定提交的上游快照 |
+| `docs/` | 当前说明、[目标](docs/goal.md)、[重构方案](docs/refactor.md)；历史记录在 `docs/archive/` |
+
+`import soft_sim` 不加载 Torch、mplib、SAPIEN、Isaac Sim 或 LeRobot，也不创建目录。
+
+## 已移除的实现
+
+为避免同一目标存在多套入口：`benchmarks/`、`shared/`、`backends/` 作为代码目录退出
+（历史说明归档到 `docs/archive/`）；RoboTwin、Franka 规划路径、MuJoCo 后端、Isaac Sim 6.2
+后端均已删除，`--robot franka`、`--mount-profile parallel_legacy` 不再存在。旧平行安装的
+成败数据保留其原安装配置，不混作当前安装姿态的验证。

@@ -1,4 +1,10 @@
+> **入口变更（2026-11-14）**：任务入口已统一为 `benchmarks/robodojo_task_soft.py`（原双 X5）。
+> 本文命令中的旧 `robodojo_soft_pick.py` 已移除；网格与材料结论仍然有效。
+
 # STL 软指形变排查（2026-11-12）
+
+> **路径变更（2026-11-14 重构）**：日常入口改为 `python scripts/run.py <command>`，实现位于 `src/soft_sim/`，生成物位于 `artifacts/`。本文保留写作时的目录与命令，当前命令见 [README](../README.md)。
+
 
 STL 加材料的弹性参数足够建立按 STL 实体制造的初始模型。当前继续使用拓竹 TPU 85A 初值：杨氏模量 5.2 MPa、密度 1180 kg/m³、泊松比假设值 0.45；没有通过降低杨氏模量来放大形变。打印参数和实测曲线可用于之后的实物标定，不是继续修正仿真的前置条件。
 
@@ -14,8 +20,8 @@ STL 加材料的弹性参数足够建立按 STL 实体制造的初始模型。�
 
 ```bash
 OPENBLAS_NUM_THREADS=1 .venv/bin/python benchmarks/check_surface_deformation.py \
-  data/generated/robodojo_episode_027_contact_render_quality \
-  --output data/generated/fem_deformation_audit
+  data/generated/robodojo/conforming/robodojo_episode_027_contact_render_quality \
+  --output data/generated/robodojo/conforming/fem_deformation_audit
 ```
 
 输出 `surface_audit.json` 和 `beam_curve.npz`；本轮另生成 `beam_curve.png` 展示同一梁边在相同物理状态下的曲线与直线差别。
@@ -52,12 +58,12 @@ OPENBLAS_NUM_THREADS=1 .venv/bin/python benchmarks/check_surface_deformation.py 
 
 投影、固定安装、初始化、节点保持运动、RGB 稳定性、原碰撞顶点距离和数据完整性检查全部通过。冻结渲染的物理状态差全部为零，左右图像指标约 0.126 / 0.095 px。以上是当前静止挤压测试的验收，不能替代运动抓取或实物材料标定。
 
-新版视频为 `data/generated/robodojo_episode_029_refined_surface/recording/episode.mp4`；同一时间的原始左右 RGB 对照为该目录的 `comparison_hold.png`。细分显示修复了已确认的曲线显示遗漏；体网格与材料本构的定量精度仍需独立验证。
+新版视频为 `data/generated/robodojo/conforming/robodojo_episode_029_refined_surface/recording/episode.mp4`；同一时间的原始左右 RGB 对照为该目录的 `comparison_hold.png`。细分显示修复了已确认的曲线显示遗漏；体网格与材料本构的定量精度仍需独立验证。
 
 ```bash
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OMNI_KIT_ACCEPT_EULA=YES \
   envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
-  --grasp-plan data/generated/rigid_box_plan/plan.json --mode squeeze --squeeze-width .052 \
+  --grasp-plan data/generated/archive-early/rigid_box_plan/plan.json --mode squeeze --squeeze-width .052 \
   --local-physics-origin --dt .001 --solver-iterations 80 --simulation-resolution 44 \
   --surface-max-edge-m .002 --max-depenetration-velocity 1 \
   --rt-subframes 4 --lighting-samples 8 --record-episode --video-fps 25 \

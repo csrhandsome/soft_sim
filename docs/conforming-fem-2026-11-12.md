@@ -1,4 +1,10 @@
+> **入口变更（2026-11-14）**：任务入口已统一为 `benchmarks/robodojo_task_soft.py`（原双 X5）。
+> 本文命令中的旧 `robodojo_soft_pick.py` 已移除；网格与材料结论仍然有效。
+
 # 参考源码、固定区和贴合体网格（2026-11-12）
+
+> **路径变更（2026-11-14 重构）**：日常入口改为 `python scripts/run.py <command>`，实现位于 `src/soft_sim/`，生成物位于 `artifacts/`。本文保留写作时的目录与命令，当前命令见 [README](../README.md)。
+
 
 ## 参考实现
 
@@ -28,7 +34,7 @@ TetGen 2 mm 参数生成 `12721` 节点、`50659` 四面体，总体积相对 ST
 ```bash
 uv sync --project envs/meshing --locked
 OPENBLAS_NUM_THREADS=1 envs/meshing/.venv/bin/python scripts/prepare_mesh.py \
-  --method tetgen --pitch .002 --output data/generated/soft_finger_tetgen_2mm.npz
+  --method tetgen --pitch .002 --output data/generated/assets/mesh/soft_finger_tetgen_2mm.npz
 ```
 
 先前隔离临时环境与锁定环境生成的节点坐标、单元索引完全一致。原有 Gmsh 路径对这份 STL 的部分曲面参数化失败，未采用该结果。
@@ -48,9 +54,9 @@ OPENBLAS_NUM_THREADS=1 envs/meshing/.venv/bin/python scripts/prepare_mesh.py \
 ```bash
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OMNI_KIT_ACCEPT_EULA=YES \
   envs/robodojo/.venv/bin/python benchmarks/robodojo_soft_pick.py \
-  --grasp-plan data/generated/rigid_box_plan/plan.json --mode squeeze --squeeze-width .052 \
+  --grasp-plan data/generated/archive-early/rigid_box_plan/plan.json --mode squeeze --squeeze-width .052 \
   --local-physics-origin --dt .001 --solver-iterations 80 \
-  --fem-mesh data/generated/soft_finger_tetgen_2mm.npz --surface-max-edge-m .002 \
+  --fem-mesh data/generated/assets/mesh/soft_finger_tetgen_2mm.npz --surface-max-edge-m .002 \
   --max-depenetration-velocity 1 --rt-subframes 4 --lighting-samples 8 \
   --record-episode --video-fps 25 --closeup --record-collision-nodes \
   --output data/generated/robodojo_episode_NEXT_conforming
@@ -96,10 +102,10 @@ OPENBLAS_NUM_THREADS=1 envs/robodojo/.venv/bin/python benchmarks/check_clamp_def
 
 可查看：
 
-- [52 mm 稳定对照原始 RGB 视频](../data/generated/robodojo_episode_031_conforming_surface/recording/episode.mp4)
-- [44 mm、80 次迭代的真实比例侧面节点视频](../data/generated/clamp_audit_033/deformation_profile.mp4)
-- [44 mm、200 次迭代的侧面节点视频](../data/generated/clamp_audit_034/deformation_profile.mp4)
-- [分条件原始 RGB 对照图](../data/generated/conforming_fem_comparison/comparison_hold.png)
+- [52 mm 稳定对照原始 RGB 视频](../data/generated/robodojo/conforming/robodojo_episode_031_conforming_surface/recording/episode.mp4)
+- [44 mm、80 次迭代的真实比例侧面节点视频](../data/generated/robodojo/conforming/clamp_audit_033/deformation_profile.mp4)
+- [44 mm、200 次迭代的侧面节点视频](../data/generated/robodojo/conforming/clamp_audit_034/deformation_profile.mp4)
+- [分条件原始 RGB 对照图](../data/generated/robodojo/conforming/conforming_fem_comparison/comparison_hold.png)
 
 对照图明确标注闭合指令、材料、迭代数、自接触状态和是否通过验收，不能将不同载荷的更大形变解释成材料模型已被验证更准确。
 

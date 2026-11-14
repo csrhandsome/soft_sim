@@ -1,11 +1,14 @@
 # RoboDojo 原双 X5 的软指移植
 
+> **路径变更（2026-11-14 重构）**：日常入口改为 `python scripts/run.py <command>`，实现位于 `src/soft_sim/`，生成物位于 `artifacts/`。本文保留写作时的目录与命令，当前命令见 [README](../README.md)。
+
+
 **2026-11-14 更新：**当前 X5 默认采用 0.75 倍、网格测得的双侧内倾约 12°及楔形连接件，
 详见 [倾斜安装、完整行程及物理复核](x5-tilted-installation-2026-11-14.md)。
-以下旧实验的 0.65/0.75 比例结果保留原平行安装配置；复现旧计划需显式加入
-`--mount-profile parallel_legacy`。不能把旧结果当作新安装验证。
+以下旧实验的 0.65/0.75 比例结果保留原平行安装配置；统一入口已移除
+`--mount-profile parallel_legacy`，这些旧运行只作为历史证据，不能混作新安装验证。
 
-入口是 `benchmarks/robodojo_task_soft.py`，默认 `--robot x5`，不再用 Franka 替换原双臂。
+唯一入口是 `benchmarks/robodojo_task_soft.py`，机器人固定为原双 X5，不再提供 Franka 路径。
 保留官方任务类、双 X5 基座、六轴机械臂、两侧滑块关节、布局和奖励管理器；隐藏原
 `link7/link8` 的指体并关闭其碰撞，在两只机械臂上各安装一对 FEM 软指。
 原生腕部相机的实体保留；采集使用执行臂的双指内相机和外部相机。
@@ -14,7 +17,7 @@ IsaacLab 无窗口模式的 `render()` 可能不刷新 Fabric；采样现在先�
 
 ## 等比缩放
 
-`--finger-scale` 控制软指尺寸，X5 当前默认 0.75，Franka 默认 1。下面的尺寸/偏置说明来自旧平行安装。
+`--finger-scale` 控制软指尺寸，X5 当前默认 0.75。下面的尺寸/偏置说明来自旧平行安装。
 源 STL 和上游机器人文件均不覆盖。
 
 | 比例 | 软指包围盒，mm | 相对完整软指的体积 |
@@ -33,8 +36,9 @@ IsaacLab 无窗口模式的 `render()` 可能不刷新 Fabric；采样现在先�
 质量因此按比例三次方变化。生成文件保存原始网格元数据和缩放比例。
 
 模型以原生 `link8/link7` 实际位姿驱动两个软指底座，支持不对称开合。原机器人滑轨
-和腕部尺寸不缩放。旧平行安装的模拟转接件把两侧软指相对原滑块各向内移动 10 mm；这是假设的
-安装方案，尚未验证实物连接。相机外壳也采用等比代理，不表示实际相机硬件可等比制造。
+和腕部尺寸不缩放。当前安装使用独立楔块，两侧各向内倾斜约 12°，由
+`x5_mount_geometry.py` 统一生成；旧平行安装的 10 mm 内移只保留在历史记录中。
+相机外壳也采用等比代理，不表示实际相机硬件可等比制造。
 
 均匀缩小、材料不变时，线弹性和几何相似的条件下结构力/位移刚度约按比例变化，
 因此不能沿用原尺寸的闭合量、夹持力或成功率。规划使用缩放后的真实接触截面与
@@ -42,34 +46,24 @@ IsaacLab 无窗口模式的 `render()` 可能不刷新 Fabric；采样现在先�
 
 ## 运行
 
+当前安装与采集命令见 [根 README](../README.md) 和
+[倾斜安装验证](x5-tilted-installation-2026-11-14.md)。基本形式：
+
 ```bash
-# 原 X5 资产首次缺失时准备；已有环境不需要重新安装。
 envs/robodojo/.venv/bin/python scripts/download_benchmark_assets.py --prefix Assets/Robots/x5
 
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OMNI_KIT_ACCEPT_EULA=YES \
 envs/robodojo/.venv/bin/python benchmarks/robodojo_task_soft.py \
-  --task general_pickup --seed 22 --mode export --robot x5 --finger-scale .65 --mount-profile parallel_legacy \
+  --task general_pickup --seed 22 --mode collect --finger-scale .75 \
   --dt .001 --solver-iterations 80 --vertex-velocity-damping 20 \
-  --texture-max-resolution 512 --fem-mesh data/generated/soft_finger_tetgen_4mm.npz \
-  --output data/generated/x5_general_pickup22_065_scene
-
-OPENBLAS_NUM_THREADS=1 envs/planning/.venv/bin/python benchmarks/plan_soft_grasp.py \
-  --scene data/generated/x5_general_pickup22_065_scene --contact-height .04745 \
-  --friction .51 --indent .008 --lift-height .14 --output data/generated/x5_general_pickup22_065_plan
-
-OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OMNI_KIT_ACCEPT_EULA=YES \
-envs/robodojo/.venv/bin/python benchmarks/robodojo_task_soft.py \
-  --task general_pickup --seed 22 --mode replay --robot x5 --finger-scale .65 --mount-profile parallel_legacy \
-  --dt .001 --solver-iterations 80 --vertex-velocity-damping 20 \
-  --texture-max-resolution 512 --fem-mesh data/generated/soft_finger_tetgen_4mm.npz \
-  --grasp-plan data/generated/x5_general_pickup22_065_plan/plan.json \
-  --dataset-root data/datasets/robodojo_x5_75a_scale065 \
-  --output data/generated/x5_general_pickup22_065_episode
+  --texture-max-resolution 512 --fem-mesh data/generated/assets/mesh/soft_finger_tetgen_4mm.npz \
+  --dataset-root data/datasets/robodojo_x5_75a_general_pickup22 \
+  --output data/generated/x5_pickup22_NEW
 ```
 
 任务引用的目标和杂物资产需预先下载。每次采集使用新的输出目录。
 原生 X5 默认选择贴合 4 mm 参数网格和 20 s⁻¹ 节点阻尼；网格缺失会明确要求先运行
-`envs/meshing/.venv/bin/python scripts/prepare_mesh.py --method tetgen --pitch .004 --output data/generated/soft_finger_tetgen_4mm.npz`。
+`envs/meshing/.venv/bin/python scripts/prepare_mesh.py --method tetgen --pitch .004 --output data/generated/assets/mesh/soft_finger_tetgen_4mm.npz`。
 8GB GPU 的单环境默认使用较小 PhysX 缓冲区、限制纹理分辨率、只分配使用中的相机产品；
 这些设置保存在 `scene.json`，原布局、物体网格、质量和摩擦不改变。
 
@@ -129,7 +123,7 @@ envs/dataset/.venv/bin/python benchmarks/validate_rgb_episode.py OUTPUT/recordin
 
 ## 已完成的采集与验收（2026-11-13）
 
-`data/generated/x5_pickup22_065_episode007` 使用原 `general_pickup_22` 布局、双 X5、
+`data/generated/x5_pickup/episodes/x5_pickup22_065_episode007` 使用原 `general_pickup_22` 布局、双 X5、
 0.65 倍软指、75A 材料；目标仍为原 40 g、摩擦系数 0.32 的玩具。最终方案使用实际
 接触中点 TCP、8 mm 单侧预压，闭合参数约 10.524 mm。12 mm 试提时物体跟随上升
 约 10.84 mm；完整抬升后约 132.41 mm，最后 1 秒全部 20 帧的最低抬升约 132.42 mm。
@@ -146,23 +140,23 @@ envs/dataset/.venv/bin/python benchmarks/validate_rgb_episode.py OUTPUT/recordin
 最终保持段左右最大帧 P95 节点投影运动约 0.630 / 0.737 px，超过旧 0.5 px 阈值。
 没有修改阈值或过滤原始图像。任务成功、数据完整性通过，不等于全部运动/画面稳定验收通过。
 原始报告位于该 episode 的 `recording/validation.json`、`finger_motion_validation.json`，
-独立 FEM 复核位于 `data/generated/x5_pickup22_065_episode007_audit/clamp_deformation.json`。
+独立 FEM 复核位于 `data/generated/x5_pickup/episodes/x5_pickup22_065_episode007_audit/clamp_deformation.json`。
 
 另已加载 `stack_blocks_0` 原布局及双 X5 替换软指，初始 FEM 和安装坐标检查通过：
-`data/generated/x5_stack_blocks_065_fastshutdown`。该结果只验证装配与场景导出；后续完整动作实现与物理验证见下节。
+`data/generated/x5_stack/scenes/x5_stack_blocks_065_fastshutdown`。该结果只验证装配与场景导出；后续完整动作实现与物理验证见下节。
 批量入口在录制/转换完成后使用 Kit 的 `skip_cleanup` 退出方式，避免旧软体张量视图卡在场景清理；
 上述堆叠场景导出及退出已实际返回 0。
 
 ## 原驱动执行、堆叠与指内视角复核（继续验证）
 
-根目录 `goal.md` 记录当前目标：以运动规划收集数据，保留原双 X5、场景和任务判定。
+[当前目标](goal.md)记录：以运动规划收集数据，保留原双 X5、场景和任务判定。
 尺寸比较基准是原装 X5，而不是把 0.65 当作原尺寸。原指体含后端安装区长约 86 mm，
 从滑块向前伸约 71 mm。0.75 倍软指前伸约 66.14 mm，计入转接件后长约 78.59 mm；
 0.8 倍分别约 70.54 / 83.82 mm。两种结构的截面不同：例如前伸 50 mm 处，原指约
 7.45 × 21.66 mm，0.75 软指约 10.66 × 20.90 mm。长度接近不能当作工作区各方向都更小。
-尺寸复核保存在 `data/generated/x5_factory_soft_size_comparison.json`、`x5_factory_soft_sections.json`。
+尺寸复核保存在 `data/generated/assets/mesh/x5_factory_soft_size_comparison.json`、`x5_factory_soft_sections.json`。
 可用 `envs/planning/.venv/bin/python benchmarks/compare_x5_finger_sizes.py` 重建同一安装坐标下的
-原爪／软指外廓对照；`data/generated/x5_finger_size_comparison/comparison.png` 中灰色为原指，
+原爪／软指外廓对照；`data/generated/x5_mount/x5_finger_size_comparison/comparison.png` 中灰色为原指，
 橙色为软指与转接件，坐标单位均为 mm。该图比较未加载静态几何，不代表运动中的避碰余量。
 
 默认 `--joint-control position` 通过原驱动发送位置和速度目标，保留原关节增益及力矩限制。
@@ -217,9 +211,9 @@ envs/dataset/.venv/bin/python benchmarks/validate_rgb_episode.py OUTPUT/recordin
 ```bash
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OMNI_KIT_ACCEPT_EULA=YES \
 envs/robodojo/.venv/bin/python benchmarks/robodojo_task_soft.py \
-  --task stack_blocks --seed 0 --mode collect --robot x5 --finger-scale .75 \
+  --task stack_blocks --seed 0 --mode collect --finger-scale .75 \
   --dt .001 --solver-iterations 80 --vertex-velocity-damping 20 \
-  --texture-max-resolution 512 --fem-mesh data/generated/soft_finger_tetgen_4mm.npz \
+  --texture-max-resolution 512 --fem-mesh data/generated/assets/mesh/soft_finger_tetgen_4mm.npz \
   --indent .004 --dataset-root data/datasets/robodojo_x5_75a_scale075_stack_blocks \
   --output data/generated/x5_stack0_scale075_NEW
 ```
