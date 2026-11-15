@@ -92,6 +92,8 @@ def audit_run(run_path, *, storage_root=None, workers=2, log_path=None, validati
 
     jobs = {}
     for name, environment, module, extra in CHECKS:
+        if name == "data_integrity":
+            continue  # Its summary depends on all independent audit files.
         base = capture if name not in ("clamp", "physx") else run_dir
         arguments = [base]
         if name == "physx":
@@ -103,12 +105,16 @@ def audit_run(run_path, *, storage_root=None, workers=2, log_path=None, validati
                                 [str(run_dir), "--states", str(output / "collision_states"),
                                  "--export-states"])
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = dict(zip(jobs, pool.map(lambda job: execute(job[0], *jobs[job]), jobs)))
+        results = dict(zip(jobs, pool.map(lambda name: execute(name, *jobs[name]), jobs)))
     commands.extend(process.to_dict() for process in results.values())
     if results["collision_export"].ok:
         process = execute("collisions", "planning", "soft_sim.validation.collisions",
                           [run_dir, "--states", output / "collision_states"])
         commands.append(process.to_dict())
+
+    # This aggregates the other audit files, so it must run after their writes.
+    process = execute("data_integrity", "dataset", "soft_sim.validation.episode", [capture])
+    commands.append(process.to_dict())
 
     report = acceptance(_task_result(run_dir), _read(capture / "validation.json"),
         _read(output / "clamp/clamp_deformation.json"),

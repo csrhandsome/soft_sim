@@ -14,6 +14,7 @@ import trimesh
 
 from soft_sim.recording.reader import open_frame
 from soft_sim.mesh import surface_faces
+from soft_sim.validation.collisions import finger_reference_for_arm, resolve_operation_arm
 
 
 def projected_depth(vertices, faces, camera_pose, intrinsics, pixels):
@@ -32,29 +33,38 @@ def projected_depth(vertices, faces, camera_pose, intrinsics, pixels):
 def check(folder):
     folder = Path(folder)
     episode = json.loads((folder / "episode.json").read_text())
-    if episode["status"] != "complete":
+    if episode["status"] not in ("committed", "complete"):
         raise ValueError("A complete recording is required")
     width, height = episode["calibration"]["finger_resolution"]
     intrinsics = np.asarray(episode["calibration"]["finger_intrinsics"])
     x, y = np.meshgrid(np.arange(8, width-8, 8), np.arange(8, height-8, 8))
     pixels = np.c_[x.ravel(), y.ravel()]
-    with np.load(folder / "finger_reference.npz", allow_pickle=False) as reference:
-        faces = [surface_faces(reference[f"finger_tets_{name}"]) for name in ("left", "right")]
+    plans = (episode.get("result") or {}).get("executed_plans") or []
+    faces_by_arm = {}
     results = []
-    for row in episode["frames"]:
-        sides = []
-        with open_frame(folder, row, include_images=False) as frame:
-            for side, name in enumerate(("left", "right")):
-                expected = projected_depth(frame[f"finger_nodes_{name}"], faces[side],
-                    frame["finger_camera_to_world"][side], intrinsics[side], pixels)
-                near = np.isfinite(expected) & (expected > .001) & (expected < .02)
-                actual = frame["finger_depth_m"][side, pixels[near, 1], pixels[near, 0]]
-                errors = np.abs(actual-expected[near])
-                agreement = float(np.mean(np.isfinite(actual) & (errors < .002))) if len(actual) else 0.
-                sides.append(dict(camera=name, rays=int(near.sum()), fraction_within_2mm=agreement,
-                    median_depth_error_mm=float(np.nanmedian(errors)*1000) if np.isfinite(errors).any() else None,
-                    passed=bool(near.sum() >= 50 and agreement > .85)))
-        results.append(dict(index=row["index"], time_s=row["time_s"], phase=row["phase"], cameras=sides))
+    with np.load(folder / "finger_reference.npz", allow_pickle=False) as reference:
+        for row in episode["frames"]:
+            sides = []
+            with open_frame(folder, row, include_images=False) as frame:
+                op_index = int(np.asarray(frame["operation_index"]).reshape(-1)[0]) if "operation_index" in frame else 0
+                op_arm = resolve_operation_arm(episode, plans, op_index)
+                if op_arm not in faces_by_arm:
+                    faces_by_arm[op_arm] = [
+                        surface_faces(finger_reference_for_arm(reference, op_arm, name)[2])
+                        for name in ("left", "right")
+                    ]
+                faces = faces_by_arm[op_arm]
+                for side, name in enumerate(("left", "right")):
+                    expected = projected_depth(frame[f"finger_nodes_{name}"], faces[side],
+                        frame["finger_camera_to_world"][side], intrinsics[side], pixels)
+                    near = np.isfinite(expected) & (expected > .001) & (expected < .02)
+                    actual = frame["finger_depth_m"][side, pixels[near, 1], pixels[near, 0]]
+                    errors = np.abs(actual-expected[near])
+                    agreement = float(np.mean(np.isfinite(actual) & (errors < .002))) if len(actual) else 0.
+                    sides.append(dict(camera=name, rays=int(near.sum()), fraction_within_2mm=agreement,
+                        median_depth_error_mm=float(np.nanmedian(errors)*1000) if np.isfinite(errors).any() else None,
+                        passed=bool(near.sum() >= 50 and agreement > .85)))
+            results.append(dict(index=row["index"], time_s=row["time_s"], phase=row["phase"], cameras=sides))
     report = dict(valid=bool(results) and all(side["passed"] for row in results for side in row["cameras"]),
         frame_count=len(results), maximum_error_m=.002, minimum_agreement=.85,
         maximum_optical_depth_m=.02, minimum_rays=50,

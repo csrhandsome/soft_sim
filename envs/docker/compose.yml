@@ -24,6 +24,8 @@ services:
       - ACCEPT_EULA=Y
       - OMNI_KIT_ACCEPT_EULA=YES
       - PRIVACY_CONSENT=Y
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - ../../artifacts:/workspace/soft_sim/artifacts
     command: ["python", "scripts/run.py", "doctor"]

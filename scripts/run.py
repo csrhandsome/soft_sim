@@ -29,6 +29,37 @@ def build_parser():
     return parser
 
 
+def run_with_log(command, environment):
+    """Tee Kit's native stdout/stderr into the run as soon as it is created."""
+    process = subprocess.Popen(command, env=environment, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
+    log = None
+    pending = []
+    try:
+        for line in process.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            if log is None:
+                pending.append(line)
+                if line.startswith("RUN "):
+                    parts = line.rstrip().split(maxsplit=2)
+                    if len(parts) == 3:
+                        directory = Path(parts[2]) / "logs"
+                        directory.mkdir(parents=True, exist_ok=True)
+                        log = (directory / "simulation.log").open("a")
+                        log.writelines(pending)
+                        pending.clear()
+            else:
+                log.write(line)
+            if log is not None:
+                log.flush()
+        return process.wait()
+    finally:
+        process.stdout.close()
+        if log is not None:
+            log.close()
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help"):
@@ -50,9 +81,14 @@ def main(argv=None):
               f"Run: bash scripts/sync_envs.sh {spec['env']}", file=sys.stderr)
         return 1
     environment = dict(os.environ)
+    environment.setdefault("ACCEPT_EULA", "Y")
+    environment.setdefault("OMNI_KIT_ACCEPT_EULA", "YES")
+    environment.setdefault("PRIVACY_CONSENT", "Y")
     environment["PYTHONPATH"] = os.pathsep.join(
         filter(None, (str(ROOT / "src"), environment.get("PYTHONPATH"))))
     command = [str(interpreter), "-m", spec["module"], *argv[1:]]
+    if name in ("collect", "replay", "export-scene", "assembly"):
+        return run_with_log(command, environment)
     return subprocess.run(command, cwd=os.getcwd(), env=environment).returncode
 
 

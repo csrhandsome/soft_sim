@@ -12,6 +12,7 @@ import numpy as np
 
 from soft_sim.execution import layout_target_parameters
 from soft_sim.robots.fingers import finger_in_link, fixture_meshes
+from soft_sim.tasks.adapters import layout_records
 
 
 def world_geometry(stage, path, world_from_root=None):
@@ -84,6 +85,17 @@ class SceneExporter:
         self.texture_max_resolution = texture_max_resolution
         self.task_name = task_name
 
+    def set_active_arm(self, arm_index, base, *, installation=None, mechanism=None):
+        """Synchronize the exporter's active arm, measured base, installation and mechanism."""
+        self.arm_index = int(arm_index)
+        self.base = np.asarray(base, dtype=float)
+        self.installation = (
+            self.installations[self.arm_index] if installation is None else installation
+        )
+        self.mechanism = (
+            self.mechanisms[self.arm_index] if mechanism is None else mechanism
+        )
+
     # -- helpers ---------------------------------------------------------
     def _numpy_pose(self, pose):
         from soft_sim.sim.robodojo import numpy_pose
@@ -114,7 +126,7 @@ class SceneExporter:
 
         vertices, faces = self._export_object(destination, target, "object_geometry.npz")
         task_objects = {}
-        labels = ("block_0", "block_1", "block_2") if self.task_name == "stack_blocks" else (target_label,)
+        labels = tuple(layout_records(self.layout))
         for label in labels:
             instance = manager.get_instance_name(label=label, env_idx=0)
             obj = manager.get_scene_object(inst_name=instance, env_idx=0)
@@ -123,9 +135,17 @@ class SceneExporter:
             v, f = self._export_object(destination, obj, filename)
             task_objects[label] = dict(prim_path=obj.prim_path, position=position.tolist(),
                                        quaternion_wxyz=quaternion.tolist(), geometry_file=filename)
+            metadata = manager.get_instance_metadata(inst_name=instance, env_idx=0) or {}
+            frames = {}
+            for kind in ("active", "passive"):
+                for tag in metadata.get(kind, {}).get("functional", {}):
+                    matrices = manager.get_functional_points(tag=tag, type=kind, config=metadata,
+                        ret="matrix", obj_name=instance, env_idx=0)
+                    frames[f"{kind}/{tag}"] = [np.asarray(matrix).tolist() for matrix in matrices]
+            task_objects[label]["functional_frames"] = frames
         print("TASK_TARGET_GEOMETRY", len(vertices), len(faces), flush=True)
 
-        obstacles, count = {}, 0
+        obstacles, count, triangle_obstacles = {}, 0, []
         exported = {target_path}
         for obj in env.scene_manager.get_objects([0]).values():
             if obj.prim_path in exported:
@@ -137,8 +157,10 @@ class SceneExporter:
                 v, f = world_geometry(env.stage, obj.prim_path, actual_pose)
             except ValueError:
                 continue
-            hull = trimesh.Trimesh(v, f, process=False).convex_hull
-            obstacles.update({f"vertices_{count}": hull.vertices, f"faces_{count}": hull.faces})
+            # A whole-object convex hull seals container openings. Keep source
+            # triangles for scene objects; robot proxies remain conservative hulls.
+            obstacles.update({f"vertices_{count}": v, f"faces_{count}": f})
+            triangle_obstacles.append(count)
             count += 1
             print("TASK_OBSTACLE", count, obj.prim_path, flush=True)
 
@@ -174,13 +196,15 @@ class SceneExporter:
         scene = dict(
             task=self.task_name, layout=str(self.layout_path), layout_sha256=self.layout_hash,
             task_objects=task_objects, obstacle_count=count, target_parameters=target_parameters,
+            triangle_obstacles=triangle_obstacles,
             target_label=target_label, target_prim=target_path,
             initial_q=robot.data.joint_pos[0].cpu().numpy().tolist(),
             initial_object_position=object_pose()[0].tolist(),
+            initial_object_orientation_wxyz=object_pose()[1].tolist(),
             table_z=.765, table_center_m=[0., -.05, .74], table_size_m=[1.4, 1.1, .05],
             world_from_robot_base=self.base.tolist(), hand_mount_offset_m=.075,
             adapter_offset_m=self.adapter_offset_m, finger_mesh=self.cfg.mesh.stl,
-            collision_scope="task rigid and geometry objects + table; convex hulls; room excluded",
+            collision_scope="task object triangles + table; robot convex hulls; room excluded",
             embodiment_variant=self.mechanism.embodiment)
         scene.update(robot_name=self.mechanism.name, active_arm=self.arm_index,
                      finger_scale=self.finger_scale,

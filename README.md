@@ -95,18 +95,38 @@ python scripts/run.py finalize --run-id <run_id>
 - 校验在启动 Isaac Sim 之前完成。
 - 每次运行写 `config.resolved.json`，记录完整有效参数与 CLI 覆盖。
 
-`configs/` 只保留当前任务：`general_pickup.json`、`stack_blocks.json`，以及把被换装机械臂
+`configs/` 保留已有单任务参数示例：`general_pickup.json`、`stack_blocks.json`，以及把被换装机械臂
 换成 Franka 的 `general_pickup_franka.json`（只多 `task.robot` 与数据集名）。上游 RoboDojo 的
 `env_cfg/**/*.yml` 与 CuRobo YAML 由适配层读取，不复制成自有配置。
 
-## 生成物只有一个出口
+第一阶段新增任务使用类型化默认参数，通过 `--task` 选择：`stack_bowls`、
+`arrange_largest_number`、`sort_nesting_dolls_by_size`、`swap_T`、`classify_objects`、
+`pack_objects_into_box`、`build_tower`。动作流程接入和实际适配完成分别记录，见
+[任务适配清单](docs/task-adaptation-status.md)。不支持通过 `--target-label` 截取这些任务的子步骤。
+缺少输入时先准备该 seed 的官方布局与精确模型，不会生成替代简单场景：
 
-默认存储根是 `artifacts/`，可用 `--storage-root /path/to/storage` 整体切换。
+```bash
+python scripts/run.py download-assets --task stack_bowls --seed 0 --max-gb 1
+python scripts/run.py collect --task stack_bowls --seed 0
+```
+
+下载记录在 `assets/downloads/task_<task>_s<seed>.json`；每条运行另存布局快照和 SHA-256。
+本地固定版上游是 eval-only，没有完整场景生成器；未提供的官方布局会明确报输入缺失。
+目前仍是单活动臂执行；需要跨工作区或双臂协调的输入可能规划失败，不计为任务完成。
+统一 YAML 批量采集与数据集交付验收入口已接入 `collect-batch --config configs/collection.yaml` 与 `validate-dataset`；详细目录、命令与已知边界见 [正式数据集交付与验收说明](docs/dataset-delivery.md)。当前已入库正式数据集为 `data/datasets/general_pickup/`（4 episodes / 832 frames，20 fps，TPU 90A，`validate-dataset --task general_pickup --require-fem` 通过）。
+
+## 生成物保存位置
+
+运行记录和缓存默认放在 `artifacts/`，可用 `--storage-root /path/to/storage` 切换。
+正式成功数据直接追加到项目根目录的 `data/datasets/<task_name>/`（本机已软链接至 `/media/three/HIKSEMI/soft_sim/datasets`，未挂载外盘时拒绝写入；无外盘标记的远端主机仍使用本地实体目录），该目录本身就是
+LeRobot v3 数据集根，不额外嵌套 dataset ID。`--dataset-id` 是运行中的集合标签；
+它不改变正式数据路径。不同材料、安装、相机或 schema 不兼容时拒绝混写。
+显式保留失败或 kinematic 回放的诊断集合仍存入 storage 下的 `datasets/lerobot/<dataset_id>/`。
 
 ```text
 artifacts/
 ├── runs/<run_id>/                  单次执行：配置、场景、计划、暂存、报告、日志、预览
-├── datasets/lerobot/<dataset_id>/  正式 LeRobot 数据集
+├── datasets/lerobot/<dataset_id>/  显式诊断集合
 └── cache/                          可重建的网格／资产缓存
 ```
 
@@ -126,8 +146,8 @@ previews/<preview_id>/   派生预览，不进入训练帧
 logs/                    子进程日志
 ```
 
-`dataset_id` 是显式集合名（例如 `x5_pickup_v1`），seed 是集合内的 episode。首次创建集合时
-记录 schema／安装／相机／FPS 兼容签名；签名不符时拒绝追加，要求新的 dataset ID。
+`dataset_id` 是集合标签（例如 `x5_pickup_v1`），seed 是任务集合内的 episode。首次创建集合时
+记录 schema／安装／相机／FPS 兼容签名；签名不符时拒绝追加；仅改 dataset ID 不会绕过正式任务目录的兼容检查。
 同一个集合同一时间只允许一个收尾写入器。
 
 ## 状态与失败恢复

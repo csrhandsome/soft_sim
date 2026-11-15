@@ -10,8 +10,10 @@ Nothing else in the project writes run output, and no command writes into an
 existing run directory.
 """
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -23,6 +25,76 @@ from soft_sim.config import ROOT
 
 def default_storage_root():
     return Path(os.environ.get("SOFT_SIM_STORAGE") or ROOT / "artifacts").resolve()
+
+
+def formal_datasets_root(project_root=ROOT):
+    return Path(project_root) / "data" / "datasets"
+
+
+def ensure_formal_datasets_ready(target_path=None, *, project_root=ROOT):
+    """Refuse formal dataset writes when data/datasets is a dangling symlink or unmounted."""
+    project_root = Path(project_root)
+    base = formal_datasets_root(project_root)
+    marker_path = project_root / "data" / ".datasets_storage_target.json"
+
+    if base.is_symlink():
+        raw_target = os.readlink(base)
+        resolved = base.resolve(strict=False)
+        if not base.exists() or not base.is_dir():
+            raise RuntimeError(
+                f"Formal dataset root {base} is a dangling or invalid symlink -> {raw_target}. "
+                "Mount the external storage device before writing formal datasets."
+            )
+        if marker_path.is_file():
+            marker = json.loads(marker_path.read_text())
+            mountpoint = marker.get("mountpoint")
+            if mountpoint and not os.path.ismount(mountpoint):
+                raise RuntimeError(
+                    f"External dataset mountpoint {mountpoint} is not mounted; "
+                    f"refusing to write under {base}."
+                )
+            expected_target = marker.get("target")
+            if expected_target and str(resolved) != str(Path(expected_target).resolve()):
+                raise RuntimeError(
+                    f"Formal dataset symlink {base} -> {resolved} does not match expected target {expected_target}."
+                )
+        if not os.access(resolved, os.W_OK):
+            raise RuntimeError(f"Formal dataset target {resolved} is not writable.")
+    elif base.exists():
+        if marker_path.is_file():
+            raise RuntimeError(
+                f"Formal dataset root {base} is a regular directory while storage marker "
+                f"{marker_path} requires a symlink to external storage; refusing system-disk fallback."
+            )
+        if not base.is_dir():
+            raise RuntimeError(f"Formal dataset root {base} exists and is not a directory.")
+        if not os.access(base, os.W_OK):
+            raise RuntimeError(f"Formal dataset root {base} is not writable.")
+    elif marker_path.is_file():
+        raise RuntimeError(
+            f"Formal dataset symlink {base} is missing while storage marker {marker_path} is present."
+        )
+
+    if target_path is not None:
+        target = Path(target_path)
+        if target.is_symlink() and (not target.exists() or not target.is_dir()):
+            raise RuntimeError(
+                f"Dataset path {target} is a dangling symlink -> {os.readlink(target)}."
+            )
+    return base
+
+
+@contextmanager
+def formal_datasets_lock(project_root=ROOT):
+    """Serialize formal dataset commits and storage switches without blocking simulation."""
+    lock_path = Path(project_root) / "artifacts" / "cache" / ".formal_datasets.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield lock_path
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 _SLUG = re.compile(r"[^a-z0-9]+")

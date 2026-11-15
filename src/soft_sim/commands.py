@@ -7,14 +7,18 @@ interpreter. This is the single place that maps a command to an environment.
 COMMANDS = {
     "collect": dict(env="robodojo", module="soft_sim.cli.collect",
                     help="Plan, execute and stage a task episode in the original RoboDojo scene"),
+    "collect-batch": dict(env="core", module="soft_sim.cli.batch",
+                          help="Run or dry-run a YAML collection manifest serially"),
     "export-scene": dict(env="robodojo", module="soft_sim.cli.collect",
                          help="Export the current official task scene without executing"),
     "replay": dict(env="robodojo", module="soft_sim.cli.collect",
                    help="Execute a saved plan in the matching scene"),
     "assembly": dict(env="robodojo", module="soft_sim.cli.collect",
                      help="Native-drive full-travel installation diagnostic"),
-    "plan": dict(env="planning", module="soft_sim.cli.plan",
-                 help="Plan a grasp on an exported scene with mplib"),
+    "plan": dict(env="robodojo", module="soft_sim.cli.plan",
+                 help="Plan a grasp on an exported scene (default: cuRobo)"),
+    "plan-mplib": dict(env="planning", module="soft_sim.cli.plan",
+                       help="Plan a grasp on an exported scene with mplib"),
     "check-installation": dict(env="planning", module="soft_sim.cli.check_installation",
                                help="Offline installation geometry, gap and collision audit"),
     "prepare-mesh": dict(env="core", module="soft_sim.cli.prepare_mesh",
@@ -23,6 +27,8 @@ COMMANDS = {
                      help="Convert a staged capture into the official LeRobot dataset"),
     "validate": dict(env="core", module="soft_sim.cli.validate",
                      help="Organize data, camera, FEM and collision checks for one run"),
+    "validate-dataset": dict(env="dataset", module="soft_sim.cli.validate_dataset",
+                             help="Verify a LeRobot v3 dataset root (metadata, state/action, and MP4 shards)"),
     "preview": dict(env="dataset", module="soft_sim.cli.preview",
                     help="Build derived previews from a run or dataset"),
     "download-assets": dict(env="core", module="soft_sim.cli.download_assets",
@@ -43,6 +49,7 @@ ALIASES = {
     "prepare_mesh": "prepare-mesh",
     "download_assets": "download-assets",
     "setup_sources": "setup-sources",
+    "validate_dataset": "validate-dataset",
 }
 
 

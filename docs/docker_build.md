@@ -110,6 +110,7 @@ docker run --rm --gpus all --ipc=host --shm-size=16g \
 ## 5. 验证记录
 
 - [x] `soft-sim:cpu` 镜像构建并在容器内通过 `python scripts/run.py test`（`unit` 105 passed、`planning` 11 passed、`dataset` 4 passed，0 skipped）
-- [ ] `soft-sim:robodojo` GPU 镜像构建并在本地 4070 上通过 `doctor` 与 GPU 测试
-- [ ] `5090` 宿主机安装 `nvidia-container-toolkit` 并验证 `docker run --gpus all`
-- [ ] `soft-sim:robodojo` 在 `5090` 上通过 `doctor` 与 GPU 仿真测试
+- [x] `soft-sim:robodojo` GPU 镜像在本地 4070（Driver `580.178.04`）上通过 `doctor`、CUDA/IsaacSim/CuRobo 导入，以及补齐 `libegl1` + `libxt6` 后 `SimulationApp({"headless": True})` + `omni.physx` 启动验证
+- [x] `5090` 宿主机安装 `nvidia-container-toolkit` 并验证 `docker run --gpus all`（需 `NVIDIA_VISIBLE_DEVICES=all` + `NVIDIA_DRIVER_CAPABILITIES=all`）
+- [x] `5090` 上 `soft-sim:robodojo` 通过 `doctor`、`unit`（108 passed）、`planning`（11 passed）、`torch 2.7.0+cu128`（`sm_120`）与 Vulkan 1.3.275 验证
+- [ ] `5090` 上 Isaac Sim 5.1 RTX 仿真（**阻塞原因**：`5090` 宿主机驱动 `595.58.03` 与 Isaac Sim `5.1.0.0` 内置 `librtx.scenedb.plugin.so` 不兼容，启动渲染器时在 `carbOnPluginStartup` 发生段错误；Docker 共用宿主机驱动，需将 `5090` 宿主机驱动降至 Isaac Sim 5.1 支持的 570/580 分支或升级 Isaac Sim）

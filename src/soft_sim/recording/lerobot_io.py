@@ -22,7 +22,7 @@ class LeRobotRecorder:
     camera_names = ("left_rgb", "right_rgb", "external_rgb")
 
     def __init__(self, directory, fps, calibration, *, dataset_root=None,
-                 repo_id="local/softfinger", task="soft finger grasp"):
+                 repo_id="local/softfinger", task="soft finger grasp", write_metadata=True):
         self.directory = Path(directory).resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
         self.root = Path(dataset_root).resolve() if dataset_root else self.directory / "dataset"
@@ -30,6 +30,7 @@ class LeRobotRecorder:
         if not self.fps.is_integer() or self.fps <= 0:
             raise ValueError("LeRobot requires a positive integer FPS")
         self.repo_id, self.task, self.calibration = repo_id, task, calibration
+        self.write_metadata = write_metadata
         self.rows, self.phases = [], []
         self.dataset = None
         self.closed = False
@@ -37,7 +38,8 @@ class LeRobotRecorder:
         self.schema = None
         self.signature_path = self.root / SIGNATURE_FILE
         self._pending_signature = None
-        self._metadata("incomplete")
+        if self.write_metadata:
+            self._metadata("incomplete")
 
     def _metadata(self, status, result=None):
         data = dict(storage_format="lerobot_v3", protocol_version=CAPTURE_PROTOCOL_VERSION,
@@ -133,7 +135,8 @@ class LeRobotRecorder:
                 self.signature_path.write_text(json.dumps(self._pending_signature, indent=2))
                 self._pending_signature = None
             self.episode_index = self.dataset.meta.total_episodes
-            self._metadata("incomplete")
+            if self.write_metadata:
+                self._metadata("incomplete")
         elif features != self.schema:
             raise ValueError("Sensor schema changed during the episode")
         self.dataset.add_frame({**frame, "task": self.task})
@@ -154,5 +157,6 @@ class LeRobotRecorder:
                     self.dataset.clear_episode_buffer()
                 self.dataset.finalize()
         finally:
-            self._metadata("complete" if saved else "incomplete", result)
+            if self.write_metadata:
+                self._metadata("complete" if saved else "incomplete", result)
         return saved

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from soft_sim.config import MATERIAL_PRESETS, ROOT
+from soft_sim.tasks.adapters import IMPLEMENTED_TASKS
 
 MODE_BY_COMMAND = {"collect": "collect", "export-scene": "export",
                    "replay": "replay", "assembly": "assembly"}
@@ -19,7 +20,7 @@ def build_parser(argv=None):
                         help="Task configuration JSON (default: configs/<task>.json when present)")
     parser.add_argument("--material", choices=MATERIAL_PRESETS,
                         help="Material preset from assets/materials (default: Bambu TPU 90A)")
-    parser.add_argument("--task", choices=("general_pickup", "stack_blocks"))
+    parser.add_argument("--task", choices=IMPLEMENTED_TASKS)
     parser.add_argument("--layout", type=Path, help="Saved layout JSON; defaults to the official one")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--active-arm", type=int, choices=(0, 1))
@@ -30,7 +31,7 @@ def build_parser(argv=None):
     parser.add_argument("--grasp-plan", type=Path, help="Saved plan for replay")
     parser.add_argument("--run-id", help="Explicit run id; the default is generated")
     parser.add_argument("--storage-root", type=Path, help="Storage root (default: artifacts/)")
-    parser.add_argument("--dataset-id", help="LeRobot collection name; seeds are episodes in it")
+    parser.add_argument("--dataset-id", help="Collection label; formal data path is data/datasets/<task>")
     parser.add_argument("--success-only", action=argparse.BooleanOptionalAction, default=None,
                         help="Commit only tasks marked successful by RewardManager (default: enabled)")
     parser.add_argument("--finger-scale", type=float, help="Uniform soft-finger scale")
@@ -49,6 +50,8 @@ def build_parser(argv=None):
     parser.add_argument("--indent", type=float, help="Per-side grasp preload, m")
     parser.add_argument("--planning-friction", type=float)
     parser.add_argument("--planning-attempts", type=int)
+    parser.add_argument("--planner", choices=("curobo", "auto", "mplib"), default="curobo",
+                        help="Motion planner backend (default: curobo)")
     parser.add_argument("--static-camera-probe-frames", type=int, default=0,
                         help="Optional zero-time diagnostic renders; never part of the dataset")
     parser.add_argument("--texture-max-resolution", type=int, choices=(512, 1024, 2048, 4096))

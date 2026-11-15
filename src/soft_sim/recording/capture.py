@@ -6,6 +6,7 @@ later converts; the two sides only exchange files.
 """
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +34,7 @@ class EpisodeRecorder:
         self.fps = float(fps)
         if not self.fps.is_integer() or self.fps <= 0:
             raise ValueError("LeRobot requires a positive integer FPS")
+        self.logical_root = Path(os.path.abspath(dataset_root))
         self.root = Path(dataset_root).resolve()
         self.repo_id, self.task, self.calibration = repo_id, task, calibration
         self.run_id = run_id
@@ -72,9 +74,8 @@ class EpisodeRecorder:
         return data
 
     def _dataset_reference(self):
-        """Portable reference: relative when both live under the same storage tree."""
-        import os
-        return os.path.relpath(self.root, self.directory)
+        """Portable reference: preserve logical path (e.g. data/datasets/<task>) across symlinks."""
+        return os.path.relpath(self.logical_root, self.directory)
 
     # -- frames -----------------------------------------------------------
     def append(self, left, right, external, *, time_s, phase, **state):

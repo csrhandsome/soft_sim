@@ -12,7 +12,7 @@ from soft_sim.recording.reader import open_frame, _dataset
 def validate(folder):
     folder = Path(folder)
     episode = json.loads((folder / "episode.json").read_text())
-    assert episode["status"] == "complete", "Episode is incomplete"
+    assert episode["status"] in ("committed", "complete"), "Episode is incomplete"
     rows = episode["frames"]
     assert len(rows) == episode["frame_count"] > 0
     np.testing.assert_allclose(np.diff([row["time_s"] for row in rows]),

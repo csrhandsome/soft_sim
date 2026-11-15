@@ -2,6 +2,22 @@
 import numpy as np
 
 
+def placement_transform_from_pose(scene, goal_pose):
+    """Rigid world displacement mapping the actual object pose to its goal."""
+    from scipy.spatial.transform import Rotation
+    goal = np.asarray(goal_pose, dtype=float)
+    if (goal.shape != (4, 4) or not np.isfinite(goal).all()
+            or not np.allclose(goal[3], [0, 0, 0, 1])
+            or not np.allclose(goal[:3, :3].T @ goal[:3, :3], np.eye(3), atol=1e-6)
+            or not np.isclose(np.linalg.det(goal[:3, :3]), 1., atol=1e-6)):
+        raise ValueError("Placement goal must be a finite rigid SE(3) transform")
+    quaternion = np.asarray(scene["initial_object_orientation_wxyz"])
+    initial = np.eye(4)
+    initial[:3, :3] = Rotation.from_quat(np.r_[quaternion[1:], quaternion[0]]).as_matrix()
+    initial[:3, 3] = scene["initial_object_position"]
+    return goal @ np.linalg.inv(initial)
+
+
 def layout_target_parameters(layout, label):
     """Read either saved or manager-enriched records without mutating them."""
     return next(({"category": category, **record}
@@ -12,25 +28,77 @@ def layout_target_parameters(layout, label):
 
 def pickup_phases(plan, paths):
     opened, closed = plan["candidate"]["opened"], plan["candidate"]["closed"]
+    release_width = plan["candidate"].get(
+        "release_width",
+        plan.get("placement", {}).get("release_width_m", opened),
+    )
+    sample_dt = plan.get("sample_dt_s", .02)
     initial = np.repeat(np.asarray(plan["initial_q"][:-2])[None], 2, axis=0)
     grasp = paths["approach"][-1:][[0, 0]]
     phases = [("settle", .3, initial, opened),
-              ("pregrasp", max(.5, (len(paths["pregrasp"])-1)*.02), paths["pregrasp"], opened),
-              ("approach", max(1., (len(paths["approach"])-1)*.02), paths["approach"], opened),
+              ("pregrasp", max(.5, (len(paths["pregrasp"])-1)*sample_dt), paths["pregrasp"], opened),
+              ("approach", max(1., (len(paths["approach"])-1)*sample_dt), paths["approach"], opened),
               ("close", 2., grasp, closed), ("hold", 1., grasp, closed),
               ("probe_lift", 1.5, paths["probe"], closed),
-              ("lift", max(2., (len(paths["lift"])-1)*.02), paths["lift"], closed)]
+              ("lift", max(2., (len(paths["lift"])-1)*sample_dt), paths["lift"], closed)]
     if "placement" not in plan:
         return phases + [("verify_hold", 1., paths["lift"][-1:][[0, 0]], closed)]
-    phases.extend((name, max(minimum, (len(paths[key])-1)*.02), paths[key], width)
+    phases.extend((name, max(minimum, (len(paths[key])-1)*sample_dt), paths[key], width)
                   for name, key, minimum, width in (
                       ("transfer", "transfer", 2., closed),
                       ("place", "place", 2., closed),
-                      ("release", "release", 1.5, opened),
-                      ("retreat", "retreat", 1., opened),
+                      ("release", "release", 1.5, release_width),
+                      ("retreat", "retreat", 1., release_width),
                       ("return_home", "return_home", 2., opened)))
     phases.append(("verify_hold", 1., paths["return_home"][-1:][[0, 0]], opened))
     return phases
+
+
+def hand_from_object_transform(hand_position, hand_rotation, object_position, object_quat_wxyz):
+    """Compute 4x4 homogeneous transform of the object in the hand/mount frame."""
+    from soft_sim.tasks.adapters import rotation
+
+    world_from_hand = np.eye(4, dtype=float)
+    world_from_hand[:3, :3] = np.asarray(hand_rotation, dtype=float)
+    world_from_hand[:3, 3] = np.asarray(hand_position, dtype=float)
+
+    world_from_obj = np.eye(4, dtype=float)
+    world_from_obj[:3, :3] = rotation(object_quat_wxyz)
+    world_from_obj[:3, 3] = np.asarray(object_position, dtype=float)
+    return np.linalg.inv(world_from_hand) @ world_from_obj
+
+
+def grasp_envelope_status(
+    object_position,
+    mount_center,
+    *,
+    initial_hand_from_object=None,
+    current_hand_from_object=None,
+    max_mount_distance_m=0.16,
+    max_slip_m=0.08,
+):
+    """Check whether the gripped object remains within the finger grasp envelope."""
+    obj_pos = np.asarray(object_position, dtype=float)
+    mnt_pos = np.asarray(mount_center, dtype=float)
+    mount_distance_m = float(np.linalg.norm(obj_pos - mnt_pos))
+    slip_m = 0.0
+    slip_deg = 0.0
+    if initial_hand_from_object is not None and current_hand_from_object is not None:
+        init_t = np.asarray(initial_hand_from_object, dtype=float)
+        curr_t = np.asarray(current_hand_from_object, dtype=float)
+        slip_m = float(np.linalg.norm(curr_t[:3, 3] - init_t[:3, 3]))
+        rel_rot = init_t[:3, :3].T @ curr_t[:3, :3]
+        cos_theta = float(np.clip((np.trace(rel_rot) - 1.0) * 0.5, -1.0, 1.0))
+        slip_deg = float(np.degrees(np.arccos(cos_theta)))
+    in_envelope = (mount_distance_m <= float(max_mount_distance_m)) and (
+        slip_m <= float(max_slip_m)
+    )
+    return dict(
+        in_envelope=bool(in_envelope),
+        mount_distance_m=mount_distance_m,
+        slip_m=slip_m,
+        slip_deg=slip_deg,
+    )
 
 
 def trajectory_command(trajectory, duration, elapsed, previous_width, width):

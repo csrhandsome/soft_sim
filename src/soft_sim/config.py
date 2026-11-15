@@ -150,7 +150,11 @@ class TaskConfig:
     joint_control: str = "position"
     adapter_offset_m: float = 0.008
     texture_max_resolution: int = 1024
-    supported_tasks: tuple[str, ...] = ("general_pickup", "stack_blocks")
+    @property
+    def supported_tasks(self):
+        # Execution recipes are the authority, not a user-editable allow list.
+        from soft_sim.tasks.adapters import IMPLEMENTED_TASKS
+        return IMPLEMENTED_TASKS
 
 
 @dataclass

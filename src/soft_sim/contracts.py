@@ -14,9 +14,11 @@ PLAN_SCHEMA_VERSION = 1
 DATASET_SIGNATURE_VERSION = 1
 
 #: Fields the dataset signature pins; a mismatch requires a new dataset id.
+#: ``active_arm`` is per-episode for dual-arm robots and lives in episode provenance.
 DATASET_SIGNATURE_KEYS = (
-    "robot_type", "joint_names", "active_arm", "finger_scale",
+    "robot_type", "joint_names", "finger_scale",
     "finger_resolution", "external_resolution", "finger_intrinsics",
+    "material", "finger_installation", "task_object_labels", "success_only",
 )
 
 CAPTURE_STATES = ("none", "capturing", "incomplete", "staged", "converting", "committed", "failed", "discarded")
@@ -76,8 +78,15 @@ def dataset_signature(calibration, fps, features=None):
 
 def check_dataset_signature(existing, expected):
     """Compare two signatures and name the first differing key."""
+    dual_arm_compat = (
+        existing.get("robot_type") == "dual_x5_softfinger"
+        and expected.get("robot_type") == "dual_x5_softfinger"
+    )
     for key in sorted(set(existing) | set(expected)):
+        if key == "active_arm" and dual_arm_compat:
+            continue
         if existing.get(key) != expected.get(key):
             raise ContractError(
                 f"Dataset signature differs in {key}: {existing.get(key)!r} != {expected.get(key)!r}. "
-                "Use a new dataset id instead of appending incompatible episodes.")
+                "Refusing to mix incompatible episodes; use a compatible collection. "
+                "Changing dataset-id does not change the formal per-task data path.")

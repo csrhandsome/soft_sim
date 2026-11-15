@@ -46,7 +46,7 @@ def check(recording, maximum_p95_px=.5, settle_s=.25):
         raise ValueError("Pixel limit must be positive and settling duration nonnegative; both must be finite")
     recording = Path(recording)
     episode = json.loads((recording / "episode.json").read_text())
-    if episode["status"] != "complete":
+    if episode["status"] not in ("committed", "complete"):
         raise ValueError("Episode is incomplete")
     reports = {}
     for phase in ("hold", "verify_hold"):

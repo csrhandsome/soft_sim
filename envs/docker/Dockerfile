@@ -56,7 +56,8 @@ COPY assets ./assets
 RUN PYTHONPATH=/workspace/soft_sim/src python3 -m soft_sim.sources
 
 # Sync core, planning, and dataset environments from locked files
-RUN bash scripts/sync_envs.sh core \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    bash scripts/sync_envs.sh core \
     && bash scripts/sync_envs.sh planning \
     && bash scripts/sync_envs.sh dataset
 
@@ -80,6 +81,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ACCEPT_EULA=Y \
     OMNI_KIT_ACCEPT_EULA=YES \
     PRIVACY_CONSENT=Y \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=all \
     UV_LINK_MODE=copy \
     UV_HTTP_TIMEOUT=600 \
     UV_HTTP_RETRIES=5 \
@@ -98,10 +101,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     python3 \
     libgl1 \
+    libegl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender1 \
+    libxt6 \
     libxi6 \
     libxrandr2 \
     libxinerama1 \
@@ -133,14 +138,17 @@ COPY assets ./assets
 RUN PYTHONPATH=/workspace/soft_sim/src python3 -m soft_sim.sources
 
 # Sync all 4 required environments (core, planning, robodojo, dataset)
-RUN bash scripts/sync_envs.sh all
+RUN --mount=type=cache,target=/root/.cache/uv \
+    bash scripts/sync_envs.sh all
 
-# Download RoboDojo assets required for simulation and tests
-RUN /workspace/soft_sim/.venv/bin/python scripts/run.py download-assets
+# Download RoboDojo robot & scene assets required for simulation and tests
+RUN /workspace/soft_sim/.venv/bin/python scripts/run.py download-assets --prefix Assets/Robots \
+    && /workspace/soft_sim/.venv/bin/python scripts/run.py download-assets
 
 # Optional: for RTX 5090 (Blackwell sm_120), pass --build-arg PYTORCH_CUDA_INDEX=https://download.pytorch.org/whl/cu128
 # to upgrade torch/torchvision/torchaudio in robodojo to CUDA 12.8 wheels.
-RUN if [ -n "${PYTORCH_CUDA_INDEX}" ]; then \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ -n "${PYTORCH_CUDA_INDEX}" ]; then \
       uv pip install --python /workspace/soft_sim/envs/robodojo/.venv/bin/python \
         --reinstall --index-url "${PYTORCH_CUDA_INDEX}" \
         torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0; \

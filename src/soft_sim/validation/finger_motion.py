@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 from soft_sim.execution import settled_phase_pairs
 from soft_sim.recording.reader import open_frame
+from soft_sim.validation.collisions import finger_reference_for_arm, resolve_operation_arm
 
 
 def project_nodes(points, camera_to_world, intrinsics):
@@ -28,36 +29,42 @@ def check(recording, maximum_unloaded_mm=2., maximum_hold_p95_px=.5, maximum_pin
         raise ValueError("Motion limits must be finite and positive")
     recording = Path(recording)
     episode = json.loads((recording / "episode.json").read_text())
-    if episode["status"] != "complete":
+    if episode["status"] not in ("committed", "complete"):
         raise ValueError("Episode is incomplete")
-    with np.load(recording / "finger_reference.npz", allow_pickle=False) as reference:
-        rest = [reference[f"finger_reference_{side}"] for side in ("left", "right")]
-        pins = [reference[f"finger_pin_{side}"] for side in ("left", "right")]
+    plans = (episode.get("result") or {}).get("executed_plans") or []
     calibration = episode.get("calibration", {})
     intrinsics = calibration.get("finger_intrinsics")
     resolution = calibration.get("finger_resolution")
     projected_positions = []
     rows, local_positions, camera_in_mount = [], [], []
-    for row in episode["frames"]:
-        with open_frame(recording, row, include_images=False) as frame:
-            mounts, cameras = frame["finger_mounts"], frame["finger_camera_to_world"]
-            local = [(frame[f"finger_nodes_{name}"] - mounts[side, :3, 3]) @ mounts[side, :3, :3]
-                     for side, name in enumerate(("left", "right"))]
-            if any(points.shape != expected.shape or not np.isfinite(points).all()
-                   for points, expected in zip(local, rest)):
-                raise ValueError("Invalid or inconsistent cooked FEM nodes")
-            camera_in_mount.append(np.linalg.inv(mounts) @ cameras)
-            if intrinsics is not None and resolution is not None:
-                projected_positions.append([project_nodes(frame[f"finger_nodes_{name}"], cameras[side],
-                                                         np.asarray(intrinsics[side]))
-                                            for side, name in enumerate(("left", "right"))])
-        local_positions.append(local)
-        displacement = [np.linalg.norm(points - expected, axis=1) * 1000
-                        for points, expected in zip(local, rest)]
-        rows.append(dict(time_s=row["time_s"], phase=row["phase"],
-                         max_displacement_mm=[float(d.max()) for d in displacement],
-                         p95_displacement_mm=[float(np.percentile(d, 95)) for d in displacement],
-                         max_pin_error_mm=[float(d[pin].max()) for d, pin in zip(displacement, pins)]))
+    with np.load(recording / "finger_reference.npz", allow_pickle=False) as reference:
+        refs_by_arm = {}
+        for row in episode["frames"]:
+            with open_frame(recording, row, include_images=False) as frame:
+                op_index = int(np.asarray(frame["operation_index"]).reshape(-1)[0]) if "operation_index" in frame else 0
+                op_arm = resolve_operation_arm(episode, plans, op_index)
+                if op_arm not in refs_by_arm:
+                    arm_refs = [finger_reference_for_arm(reference, op_arm, side) for side in ("left", "right")]
+                    refs_by_arm[op_arm] = ([r[0] for r in arm_refs], [r[1] for r in arm_refs])
+                rest, pins = refs_by_arm[op_arm]
+                mounts, cameras = frame["finger_mounts"], frame["finger_camera_to_world"]
+                local = [(frame[f"finger_nodes_{name}"] - mounts[side, :3, 3]) @ mounts[side, :3, :3]
+                         for side, name in enumerate(("left", "right"))]
+                if any(points.shape != expected.shape or not np.isfinite(points).all()
+                       for points, expected in zip(local, rest)):
+                    raise ValueError("Invalid or inconsistent cooked FEM nodes")
+                camera_in_mount.append(np.linalg.inv(mounts) @ cameras)
+                if intrinsics is not None and resolution is not None:
+                    projected_positions.append([project_nodes(frame[f"finger_nodes_{name}"], cameras[side],
+                                                             np.asarray(intrinsics[side]))
+                                                for side, name in enumerate(("left", "right"))])
+            local_positions.append(local)
+            displacement = [np.linalg.norm(points - expected, axis=1) * 1000
+                            for points, expected in zip(local, rest)]
+            rows.append(dict(time_s=row["time_s"], phase=row["phase"],
+                             max_displacement_mm=[float(d.max()) for d in displacement],
+                             p95_displacement_mm=[float(np.percentile(d, 95)) for d in displacement],
+                             max_pin_error_mm=[float(d[pin].max()) for d, pin in zip(displacement, pins)]))
     camera_in_mount = np.asarray(camera_in_mount)
     reference_camera = camera_in_mount[0]
     translation_error = float(np.linalg.norm(camera_in_mount[:, :, :3, 3] - reference_camera[:, :3, 3], axis=-1).max() * 1000)
@@ -71,9 +78,17 @@ def check(recording, maximum_unloaded_mm=2., maximum_hold_p95_px=.5, maximum_pin
         stats = dict(frames=len(indices),
                      maximum_displacement_mm=np.max([rows[i]["max_displacement_mm"] for i in indices], axis=0).tolist())
         if baseline is not None:
-            stats["maximum_change_from_precontact_mm"] = [float(max(
-                np.linalg.norm(local_positions[i][side] - local_positions[baseline][side], axis=1).max() * 1000
-                for i in indices)) for side in (0, 1)]
+            stats["maximum_change_from_precontact_mm"] = [
+                float(max(
+                    (
+                        np.linalg.norm(local_positions[i][side] - local_positions[baseline][side], axis=1).max() * 1000
+                        for i in indices
+                        if local_positions[i][side].shape == local_positions[baseline][side].shape
+                    ),
+                    default=0.0,
+                ))
+                for side in (0, 1)
+            ]
         # Exclude initial settling after a hold starts. These are physical node
         # changes in the base frame, not camera motion or a visual stabilizer.
         if phase in ("hold", "verify_hold"):

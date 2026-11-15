@@ -3,10 +3,18 @@ import unittest
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from soft_sim.validation.collisions import pose_matrix, same_vertices
+from soft_sim.validation.collisions import pose_matrix, same_vertices, task_object_present
 
 
 class TaskCollisionGeometry(unittest.TestCase):
+    def test_single_object_scalar_validity_and_missing_slots(self):
+        self.assertTrue(task_object_present({"task_object_valid": np.array(1.)}, 0))
+        self.assertFalse(task_object_present({"task_object_valid": np.array(0.)}, 0))
+        frame = {"task_object_valid": np.array([1., 0.])}
+        self.assertTrue(task_object_present(frame, 0))
+        self.assertFalse(task_object_present(frame, 1))
+        self.assertTrue(task_object_present({}, 0))
+
     def test_recorded_quaternion_moves_world_geometry_without_changing_shape(self):
         quaternion = Rotation.from_euler("z", 90., degrees=True).as_quat()
         pose = pose_matrix([.2, -.1, .8], np.r_[quaternion[3], quaternion[:3]])

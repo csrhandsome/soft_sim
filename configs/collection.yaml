@@ -1,0 +1,129 @@
+# Unified RoboDojo soft-finger collection manifest (default TPU 90A, success-only).
+# Enable tasks as they are adapted and verified; missing inputs or unsupported tasks
+# are reported explicitly without substitution.
+
+defaults:
+  material: bambu_tpu_90a
+  success_only: true
+  attempts_per_seed: 1
+
+tasks:
+  - task: general_pickup
+    enabled: true
+    seeds: [22]
+    dataset_id: x5_90a_general_pickup_success_v1
+    max_saved_episodes: 100
+
+  - task: stack_blocks
+    enabled: true
+    seeds: [0]
+    dataset_id: x5_90a_stack_blocks_success_v1
+    max_saved_episodes: 100
+
+  - task: stack_bowls
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_stack_bowls_success_v1
+    max_saved_episodes: 100
+
+  - task: arrange_largest_number
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_arrange_largest_number_success_v1
+    max_saved_episodes: 100
+
+  - task: sort_nesting_dolls_by_size
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_sort_nesting_dolls_by_size_success_v1
+    max_saved_episodes: 100
+
+  - task: swap_T
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_swap_T_success_v1
+    max_saved_episodes: 100
+
+  - task: classify_objects
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_classify_objects_success_v1
+    max_saved_episodes: 100
+
+  - task: pack_objects_into_box
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_pack_objects_into_box_success_v1
+    max_saved_episodes: 100
+
+  - task: build_tower
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_build_tower_success_v1
+    max_saved_episodes: 100
+
+  - task: stack_blocks_by_language
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_stack_blocks_by_language_success_v1
+    max_saved_episodes: 100
+
+  - task: classify_objects_by_language
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_classify_objects_by_language_success_v1
+    max_saved_episodes: 100
+
+  - task: put_bottles_into_dustbin
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_put_bottles_into_dustbin_success_v1
+    max_saved_episodes: 100
+
+  - task: insert_tubes
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_insert_tubes_success_v1
+    max_saved_episodes: 100
+
+  - task: deposit_coin
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_deposit_coin_success_v1
+    max_saved_episodes: 100
+
+  - task: fill_pen_holder
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_fill_pen_holder_success_v1
+    max_saved_episodes: 100
+
+  - task: cover_blocks
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_cover_blocks_success_v1
+    max_saved_episodes: 100
+
+  - task: organize_table
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_organize_table_success_v1
+    max_saved_episodes: 100
+
+  - task: play_stacking_toy
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_play_stacking_toy_success_v1
+    max_saved_episodes: 100
+
+  - task: hang_mugs
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_hang_mugs_success_v1
+    max_saved_episodes: 100
+
+  - task: solve_equation
+    enabled: false
+    seeds: [0]
+    dataset_id: x5_90a_solve_equation_success_v1
+    max_saved_episodes: 100

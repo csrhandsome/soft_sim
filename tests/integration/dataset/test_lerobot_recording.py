@@ -20,7 +20,8 @@ class LeRobotRoundTrip(unittest.TestCase):
             for episode in range(2):
                 calibration = dict(robot_type="dual_x5_softfinger",
                     joint_names=[f"robot{arm}/joint{joint}" for arm in range(2) for joint in range(1,9)])
-                recorder = EpisodeRecorder(root / str(episode), 20, calibration, dataset_root=dataset)
+                recorder = EpisodeRecorder(root / str(episode), 20, calibration, dataset_root=dataset,
+                                           success_only=False)  # Explicit mixed-result diagnostic collection.
                 for index in range(4):
                     rgb = np.random.default_rng(index).integers(0, 256, (32, 32, 3), dtype=np.uint8)
                     depth = np.full((2,32,32), index+.125)

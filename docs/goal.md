@@ -2,6 +2,9 @@
 
 当前目标是使用 **motion planning（运动规划）**，让换装新软指的机器人执行 RoboDojo 任务并收集仿真数据。当前阶段不以接入或训练策略模型为前提。
 
+2026-11-15 晚剩余验证更新见[验证记录](remaining-verification-2026-11-15.md)与 [`latest_results.json`](../artifacts/cache/remaining_verification_20261115/latest_results.json)：全部 54 项任务 seed 0 的模型、布局及房间/材质/HDR 输入已补齐，54 项均已有最新实际运行记录（`overall_attempted` 54/54，由 53 项 seed 0 与 `general_pickup` seed 22 组成：`success` 1、`task_failed` 23、`planning_failed` 20、`runtime_error` 10；`task_success` 三态 `true: 1 / false: 43 / null: 10`，`quality_valid` 三态 `false: 1 / null: 53`）；默认 cuRobo 的 `general_pickup` seed 22 新增原任务成功对照（`task_success=true`，抬升 133.761 mm，208 帧诊断 LeRobot 数据完整回读，但独立质量复核 `quality_valid=false`）。堆叠 `indent=0.008` 已确认原驱动闭合与试抬指令实际执行，但物体未随动；详细质量检查与动作实现缺口另列，仍不能宣称全任务适配完成或质量全部通过。
+4090 经用户授权改为两路独立任务队列，已实测双进程约 14.9GB 显存，见[双机说明](remote-4090-sync.md)。
+
 2026-11-15 更新：优先尽可能完成更多任务的软指适配，再建设覆盖已适配任务的全量运行与采集入口。
 换装夹爪会改变可抓取范围，不要求所有任务、物体、位置和 seed 都成功。不同布局与 seed
 本身已经提供大量抓取和操作变化，应接受个别布局无法完成，把投入优先用于扩大可执行任务的覆盖面。
@@ -50,8 +53,9 @@
 ## 全任务适配范围与现状
 
 逐项状态以 [任务适配清单](task-adaptation-status.md) 为准。当前上游快照有 42 个基础仿真任务和
-12 个随机变体；18 个真机任务不在本轮仿真适配范围内。自有软指执行器目前只接入
-`general_pickup` 和 `stack_blocks`，其中只有前者已有当前安装的成功采集记录。
+12 个随机变体；18 个真机任务不在本轮仿真适配范围内。自有软指执行器原先只接入
+`general_pickup` 和 `stack_blocks`；本轮已补充阶段 1 的 7 个任务动作流程，实际验证状态
+见[第一阶段实现说明](task-adaptation-phase1.md)和任务清单。目前仍只有通用抓取有当前安装的成功采集记录。
 55 个抓取布局仍然只是一个任务的不同输入，不计作 55 个已适配任务。
 
 本轮目标是尽可能覆盖这 42 个基础任务；12 个随机变体在对应基础任务有可用流程后扩展。
@@ -117,8 +121,56 @@ RewardManager 的实现，再编写必要的动作流程。
 | 6：扩展随机变体 | 对应 12 个 `_random` 任务 | 基础任务已有可执行流程后，接入各变体原有随机化；依据实际几何重新规划，不复用固定布局轨迹冒充泛化 |
 | 7：统一全量入口 | 当大部分基础任务已有适配后开展 | 从 YAML 选择任务与输入，调用统一任务适配接口；实现批量执行、成功保存、失败跳过、断点续跑和覆盖汇总 |
 
+本轮实施：默认 90A 的 `general_pickup` seed 22 已通过原驱动完整执行（原奖励 1，抬升约 136.814 mm，268 帧 LeRobot v3）；独立质量复核单独记录。42 个基础任务与 12 个随机变体的动作编排已接入 `tasks/adapters.py`，并建立 `configs/collection.yaml` 与 `collect-batch` 统一批量入口；各任务仍需通过实际 GPU 运行逐项验证，代码接入不等于适配成功。
+
+### 规划与双臂适配排查项（2026-11-15）
+
+相对原版 RoboDojo，本项目实质上**只改变了两件事**：
+1. **末端夹爪的软体物理求解**（TPU 90A FEM 软指求解、80 次迭代、1 ms 步长、节点阻尼 20、固定区消元）；
+2. **末端夹爪的构形与安装**（`measured_wedge_v3` 0.75 倍倾斜安装，完整外廓尺寸已与原装 X5 手指基本对齐）。
+
+以上两项的基础装配与物理求解已经解决。因此，**除软指物理与夹爪构形外，其余部分（规划器、双臂选择、功能点抓取与任务执行逻辑）原则上应当尽量沿用原版 RoboDojo 的做法**。当前阶段只接受因软指构形／物理接触导致的抓取不到、打滑或碰撞，不接受机械臂可达却在规划阶段就报 `planning_failed`。针对首批任务试运行中的 `planning_failed`，日志与 `scene.json` 核对出以下排查方向：
+
+1. **评估采用原版同款 `cuRobo` 规划器（对照当前 `mplib`）**：核对 [`third_party/RoboDojo/env/planner_manager/curobo_planner.py`](../third_party/RoboDojo/env/planner_manager/curobo_planner.py) 的批量 IK 与轨迹优化配置，对比 `mplib`（Pinocchio + FCL）在姿态采样、碰撞体包络与 IK 求解上的差异，必要时接入同款 `cuRobo` 规划路径以消除规划器本身导致的可达性损失。
+2. **左／右臂未按目标位置选择**：此前 `collect.py` 默认固定使用右臂（`active_arm = 1`，基座 `x = +0.3`），导致 `cover_blocks`（`x = -0.20`）、`hang_mugs`（`x = -0.42`）、`fill_pen_holder`（`x = -0.34`）、`deposit_coin`（`x = -0.30`）等左臂区物体全部 IK 失败。已改为未显式指定 `--active-arm` 时按首目标 X 坐标自动选择左／右臂（`x < 0` 选左臂 0，`x >= 0` 选右臂 1）；后续进一步扩展为单步按需切换双臂。
+3. **扁平物体桌面间隙过滤过严（`GEOMETRIC_CANDIDATES 0`）**：硬币、数字牌、平放笔高度仅 1～2 cm，原 `grasp.py` 只在质心 `zoffset <= 9 mm` 水平夹取，导致张开手指低于 `table_z + 2 mm` 而无候选。已在 `grasp.py` 增加贴近物体上沿的 `zoffset` 采样。
+4. **`place` 阶段笛卡尔直线插值失败**：`insert_tubes` 在 `pregrasp/approach/lift` 通过后于 `place` 报笛卡尔 IK 失败，已增加 `plan_pose` 碰撞安全 RRT 回退。
+5. **待后续排查的专项几何／自碰问题**：
+   - `stack_bowls`（直径 120 mm > 最大张开 88 mm）：对称中心抓取不可行，需补充**容器壁／碗沿单侧抓取**候选。
+   - `sort_nesting_dolls_by_size`：`link4` 与 `camera_base` 发生自碰，需核查相机底座碰撞体包络与接近姿态。
+
+### 规划器切换与双机验证进展（2026-11-15 晚）
+
+1. **已将 RoboDojo 同款 `cuRobo` 设为默认规划器**：
+   - 新增 [`src/soft_sim/planning/curobo.py`](../src/soft_sim/planning/curobo.py)，在 `envs/robodojo/.venv` 进程内缓存复用 `CuroboPlanner`（基座相对桌面高度 `table_height = table_z - base_z - 0.025`）。
+   - `scripts/run.py collect`、`collect-batch` 与 `plan` 均默认使用 `cuRobo`，保留 `--planner auto/mplib` 与 `plan-mplib` 作为显式回退。
+   - 抽取共用候选生成器 [`src/soft_sim/planning/candidates.py`](../src/soft_sim/planning/candidates.py)（薄/扁物体加密 yaw 采样并自适应预压 `indent`），并修复 `grasp.py` 使用真实三角网格而非实心凸包。
+2. **13 个任务 `seed 0` 的 `cuRobo` 实测表现**：
+   - **8 个任务已通过规划并进入物理仿真执行**：`cover_blocks`、`insert_tubes`、`stack_blocks`、`arrange_largest_number`、`swap_T`、`pack_objects_into_box`、`classify_objects_by_language`、`sort_nesting_dolls_by_size`（其中套娃已执行至 `transfer` 阶段 12.0s；详细状态见 [任务适配清单](task-adaptation-status.md)）。
+   - **5 个任务仍为 `planning_failed`**：`deposit_coin`、`classify_objects`、`build_tower`（抓起后 `transfer` 跨桌到另一侧臂区超出单臂范围）、`hang_mugs`（`lift` 0.14 m 边缘可达性）、`fill_pen_holder`（目标 `y=+0.066` 位于臂展极限）。
+3. **当前排查重点**：
+   - 多个进入仿真的放置任务在 `probe_lift` 阶段物体未抬起（`verify_stack_contact_20261115` 已验证 `--indent 0.008` 闭合至 18.8 mm、末端上移 11.98 mm 但方块仍未随动）；
+   - 单臂跨桌 `transfer` 需进一步接入按操作目标自动切换左／右臂或交接。
+4. **双机并行验证**：已打通 `ssh 4090`（RTX 4090 24GB，`/home/sustechdl/code/threecheng/soft_sim`）代码同步与回归测试流程，详见 [双机并行验证与 4090 代码同步说明](remote-4090-sync.md)。
+
 阶段 1～5 合计覆盖余下 40 个基础任务。当前阶段的进展主要看新增可执行任务数和取得成功的任务数，
 并附实际运行输入与失败原因；不以 42／42 全成功或某个任务全部 seed 成功作为前置条件。
+
+## 最终数据保存目录
+
+最终正式数据统一保存到项目根目录下的 `data/datasets/`，其下按任务名称建立目录：
+
+```text
+data/datasets/
+├── general_pickup/   # 独立、完整的 LeRobot v3 数据集根目录
+├── stack_blocks/     # 独立、完整的 LeRobot v3 数据集根目录
+└── <task_name>/      # 其他任务使用原任务名称
+```
+
+进入任意 `data/datasets/<task_name>/` 后，该目录本身就是可直接读取和验证的 LeRobot v3
+数据集根目录，包含该格式要求的元数据、数据文件及对应媒体文件；不再额外套一层 `dataset_id`
+或运行目录。同一任务的成功且录制完整的 episode 追加到对应任务的数据集，失败日志、运行记录和
+转换暂存另行保存，不作为正式 episode 混入其中。
 
 ## 后续全量入口与 YAML 采集清单
 
@@ -126,9 +178,7 @@ RewardManager 的实现，再编写必要的动作流程。
 “全量”表示遍历 YAML 选中的任务与输入；没有适配的任务明确记为未支持，缺资产／布局记为输入缺失，
 实际操作失败与运行异常分开统计，不能把跳过项或仅加载场景算作已验证。
 
-计划增加 `configs/collection.yaml`，由它统一决定采集任务、seed、默认材料与保存数量。
-现有 `configs/*.json` 是单任务参数，仍可作为适配参考；以下 YAML 是后续批量入口的配置设计，
-不是当前已经可以执行的命令或已支持的解析格式：
+`configs/collection.yaml` 与 `python scripts/run.py collect-batch --config configs/collection.yaml` 已实现，统一决定采集任务、seed、默认材料与保存数量；交付验收命令 `validate-dataset` 与首条正式样本 `data/datasets/general_pickup` 验收记录见 [正式数据集交付与验收说明](dataset-delivery.md)。现有 `configs/*.json` 仍作为单任务默认参数；配置结构如下：
 
 ```yaml
 defaults:

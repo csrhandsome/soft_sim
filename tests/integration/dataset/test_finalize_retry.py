@@ -34,7 +34,8 @@ class FinalizeRetry(unittest.TestCase):
         for index in range(3):
             rgb = np.random.default_rng(index).integers(0, 256, (32, 32, 3), dtype=np.uint8)
             recorder.append(rgb, rgb, rgb, time_s=(index + 1) / 20, phase="hold",
-                            joint_positions=np.full(6, index))
+                            joint_positions=np.full(6, index),
+                            commanded_joint_positions=np.full(6, index))
         recorder.close(complete=True, result=dict(success=True))
         return root / "run/capture"
 

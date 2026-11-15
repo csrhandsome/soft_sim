@@ -14,6 +14,7 @@ from soft_sim.recording.reader import open_frame
 from soft_sim.mesh import load_stl, tet_volumes, contains_points
 from soft_sim.config import MeshConfig, resolve_asset
 from soft_sim.sim.render_surface import bind_points
+from soft_sim.validation.collisions import finger_reference_for_arm, resolve_operation_arm
 
 
 def rigid_fit(reference, current):
@@ -42,7 +43,7 @@ def audit(folder, output, maximum_pin_error_mm=.01):
     run = run_directory(recording)
     episode = json.loads((recording / 'episode.json').read_text())
     result = json.loads(first_existing(run / 'results/task.json', run / 'result.json').read_text())
-    if episode['status'] != 'complete' or not episode['frames']:
+    if episode['status'] not in ('committed', 'complete') or not episode['frames']:
         raise ValueError('A complete recording is required')
     if not np.isfinite(maximum_pin_error_mm) or maximum_pin_error_mm <= 0:
         raise ValueError('Pin tolerance must be positive and finite')
@@ -71,22 +72,38 @@ def audit(folder, output, maximum_pin_error_mm=.01):
     samples = vertices[rib_edges[:, 0], None] * (1 - fraction) + vertices[rib_edges[:, 1], None] * fraction
     max_pin = [0., 0.]
     minimum_jacobian = [float('inf'), float('inf')]
-    reference_volumes = {name: tet_volumes(references['finger_reference_' + name],
-                                          references['finger_tets_' + name]) for name in ('left', 'right')}
+    plans = result.get('executed_plans') or (episode.get('result') or {}).get('executed_plans') or []
+    arm_refs_cache = {}
+    def get_arm_refs(op_index):
+        op_arm = resolve_operation_arm(episode, plans, op_index)
+        if op_arm not in arm_refs_cache:
+            arm_refs_cache[op_arm] = {
+                name: (
+                    *finger_reference_for_arm(references, op_arm, name),
+                    tet_volumes(finger_reference_for_arm(references, op_arm, name)[0],
+                                finger_reference_for_arm(references, op_arm, name)[2]),
+                )
+                for name in ('left', 'right')
+            }
+        return arm_refs_cache[op_arm]
+
     for frame_row in episode['frames']:
         with open_frame(recording, frame_row, include_images=False) as f:
+            op_index = int(np.asarray(f['operation_index']).reshape(-1)[0]) if 'operation_index' in f else 0
+            arm_refs = get_arm_refs(op_index)
             for side, name in enumerate(('left', 'right')):
                 pose = f['finger_mounts'][side]
                 x = (f['finger_nodes_' + name] - pose[:3, 3]) @ pose[:3, :3]
-                ref, pin = references['finger_reference_' + name], references['finger_pin_' + name]
+                ref, pin, tets, ref_vol = arm_refs[name]
                 if x.shape != ref.shape or not np.isfinite(x).all():
                     raise ValueError('Invalid recorded FEM nodes')
                 max_pin[side] = max(max_pin[side], float(np.linalg.norm(x[pin] - ref[pin], axis=1).max() * 1000))
-                relative_volume = tet_volumes(x, references['finger_tets_' + name]) / reference_volumes[name]
+                relative_volume = tet_volumes(x, tets) / ref_vol
                 minimum_jacobian[side] = min(minimum_jacobian[side], float(relative_volume.min()))
+    held_op_index = int(np.asarray(state['operation_index']).reshape(-1)[0]) if 'operation_index' in state else 0
+    held_refs = get_arm_refs(held_op_index)
     for side, name in enumerate(('left', 'right')):
-        rest = references['finger_reference_' + name]
-        pin, tets = references['finger_pin_' + name], references['finger_tets_' + name]
+        rest, pin, tets, _ = held_refs[name]
         def local(f):
             pose = f['finger_mounts'][side]
             return (f['finger_nodes_' + name] - pose[:3, 3]) @ pose[:3, :3]

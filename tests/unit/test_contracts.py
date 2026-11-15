@@ -60,6 +60,24 @@ class DatasetSignature(unittest.TestCase):
             check_dataset_signature(dataset_signature(self.calibration, 20),
                                     dataset_signature(self.calibration, 30))
 
+    def test_task_slots_material_installation_and_selection_must_match(self):
+        calibration = dict(self.calibration, material={"shore_a": 90},
+            finger_installation={"profile": "measured_wedge_v3"},
+            task_object_labels=["target"], success_only=True)
+        first = dataset_signature(calibration, 20)
+        for key, value in (("material", {"shore_a": 85}),
+                           ("finger_installation", {"profile": "legacy"}),
+                           ("task_object_labels", ["different_object"]),
+                           ("success_only", False)):
+            with self.subTest(key=key), self.assertRaisesRegex(ContractError, key):
+                check_dataset_signature(first, dataset_signature(dict(calibration, **{key: value}), 20))
+
+    def test_dual_arm_active_arm_difference_is_compatible_even_with_legacy_signature(self):
+        legacy_existing = dataset_signature(self.calibration, 20)
+        legacy_existing["active_arm"] = 1
+        left_arm_expected = dataset_signature(dict(self.calibration, active_arm=0), 20)
+        check_dataset_signature(legacy_existing, left_arm_expected)
+
 
 if __name__ == "__main__":
     unittest.main()
