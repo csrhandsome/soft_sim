@@ -13,8 +13,8 @@ import trimesh
 from mplib.collision_detection import fcl
 
 from soft_sim.validation.installation import collision_object, wrist_obstacles
-from soft_sim.robots.x5.mount_geometry import fixture_meshes
-from soft_sim.robots.x5.soft_tool import finger_in_link, link_transforms
+from soft_sim.robots.fingers import fixture_meshes, finger_in_link, link_transforms
+from soft_sim.robots.mechanism import mechanism
 from soft_sim.mesh import surface_faces
 from soft_sim.validation.fem_projection import projected_depth
 
@@ -30,10 +30,12 @@ def main(argv=None):
     scene = json.loads((args.run / "scene.json").read_text())
     rows = json.loads((folder / "samples.json").read_text())
     installation, scale = scene["finger_installation"], scene["finger_scale"]
+    mechanisms = [mechanism("x5"), mechanism("x5")]
+    mechanisms[scene["active_arm"]] = mechanism(scene["robot_name"])
     reference = np.load(folder / "reference.npz")
     boundaries = {(index, side): surface_faces(reference[f"robot{index}_tets_{side}"])
                   for index in (0, 1) for side in (0, 1)}
-    wrist_meshes = wrist_obstacles()
+    wrist_meshes = [wrist_obstacles(entry) for entry in mechanisms]
     table = trimesh.creation.box(extents=scene["table_size_m"])
     table.apply_translation(scene["table_center_m"])
     fixed = {"table": collision_object(table)}
@@ -45,11 +47,13 @@ def main(argv=None):
         with np.load(folder / row["state_file"]) as state:
             moving, wrists = {}, {}
             for index in (0, 1):
+                arm = mechanisms[index]
                 mounts = state[f"robot{index}_mounts"]
-                links = link_transforms(state[f"robot{index}_q"])
-                world_wrist = mounts[0] @ np.linalg.inv(finger_in_link(0, installation)) @ np.linalg.inv(
-                    np.linalg.inv(links["link6"]) @ links["link8"])
-                for name, mesh in wrist_meshes.items():
+                links = link_transforms(state[f"robot{index}_q"], mechanism=arm)
+                first = arm.finger_links[0]
+                world_wrist = mounts[0] @ np.linalg.inv(finger_in_link(0, installation, arm)) @ np.linalg.inv(
+                    np.linalg.inv(links[arm.hand_link]) @ links[first])
+                for name, mesh in wrist_meshes[index].items():
                     mesh = mesh.copy()
                     mesh.apply_transform(world_wrist)
                     wrists[f"robot{index}_{name}"] = collision_object(mesh)
@@ -57,13 +61,16 @@ def main(argv=None):
                     nodes = state[f"robot{index}_nodes_{side}"]
                     moving[(index, side, "finger")] = collision_object(trimesh.Trimesh(
                         nodes, boundaries[index, side], process=False))
-                    world_link = mounts[side] @ np.linalg.inv(finger_in_link(side, installation))
-                    for name, mesh in fixture_meshes(scale, side, installation).items():
+                    world_link = mounts[side] @ np.linalg.inv(finger_in_link(side, installation, arm))
+                    for name, mesh in fixture_meshes(scale, side, installation, arm).items():
                         if f"robot{index}_fixtures" in state.files:
                             paths = reference[f"robot{index}_fixture_paths"].tolist()
-                            parent = ("link8", "link7")[side]
-                            slot = paths.index(f"/World/envs/env_0/robot{index}/{parent}/SoftFixtures/{name}")
-                            pose = state[f"robot{index}_fixtures"][slot] @ np.linalg.inv(finger_in_link(side, installation))
+                            parent = arm.finger_links[side]
+                            suffix = f"/{parent}/SoftFixtures/{name}"
+                            slot = next(index for index, path in enumerate(paths)
+                                        if path.endswith(suffix))
+                            pose = state[f"robot{index}_fixtures"][slot] @ np.linalg.inv(
+                                finger_in_link(side, installation, arm))
                         else:
                             pose = world_link
                         mesh.apply_transform(pose)

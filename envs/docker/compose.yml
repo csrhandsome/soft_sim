@@ -1,0 +1,29 @@
+services:
+  cpu-test:
+    build:
+      context: ../..
+      dockerfile: envs/docker/Dockerfile
+      target: cpu
+    image: soft-sim:cpu
+    command: ["python", "scripts/run.py", "test", "--verbose"]
+
+  robodojo:
+    build:
+      context: ../..
+      dockerfile: envs/docker/Dockerfile
+      target: robodojo
+      args:
+        TORCH_CUDA_ARCH_LIST: "8.9;12.0"
+        # Uncomment or override when targeting RTX 5090 (sm_120):
+        # PYTORCH_CUDA_INDEX: "https://download.pytorch.org/whl/cu128"
+    image: soft-sim:robodojo
+    gpus: all
+    ipc: host
+    shm_size: "16g"
+    environment:
+      - ACCEPT_EULA=Y
+      - OMNI_KIT_ACCEPT_EULA=YES
+      - PRIVACY_CONSENT=Y
+    volumes:
+      - ../../artifacts:/workspace/soft_sim/artifacts
+    command: ["python", "scripts/run.py", "doctor"]

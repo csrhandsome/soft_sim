@@ -1,0 +1,25 @@
+# Exclude local virtualenvs, caches, git history, and large artifacts from Docker context
+.git/
+.venv/
+.uv-cache/
+envs/*/.venv/
+envs/*/.uv-cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Pinned third-party sources can be fetched inside the container or mounted
+.deps/
+third_party/*/
+
+# Generated outputs and large media
+artifacts/
+data/
+*.mp4
+*.png
+*.pdf
+*.json
+!configs/*.json
+!assets/**/*.json
+!third_party/sources.json

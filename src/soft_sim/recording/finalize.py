@@ -58,6 +58,8 @@ def committed_episode(directory, metadata):
 def finalize(directory):
     directory = Path(directory).resolve()
     metadata = validate_capture_metadata(_read(directory / "episode.json"))
+    if metadata.get("success_only") and (metadata.get("result") or {}).get("success") is not True:
+        raise ContractError("Success-only capture requires a successful task result; refusing commit")
     previous = committed_episode(directory, metadata)
     if previous is not None:
         return previous

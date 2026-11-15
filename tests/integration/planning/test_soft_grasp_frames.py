@@ -13,6 +13,11 @@ from soft_sim.robots.x5.soft_tool import make_x5_urdf, mounts_from_q, JOINT_NAME
 from soft_sim.mesh import TetMesh
 from soft_sim.robots.x5.mount_geometry import measured_installation, contact_geometry, tool_meshes, fixture_meshes, validate_installation, camera_housing_surface
 from soft_sim.geometry import mounted_camera_pose
+from soft_sim.robots.fingers import (
+    fixture_meshes as mechanism_fixtures, link_transforms as mechanism_fk, make_planning_urdf,
+    measured_installation as mechanism_installation, mounts_from_q as mechanism_mounts, scene_joint_vector,
+)
+from soft_sim.robots.mechanism import FRANKA
 
 class FrameIntegration(unittest.TestCase):
     def test_stl_contact_band_has_correct_units(self):
@@ -87,6 +92,70 @@ class FrameIntegration(unittest.TestCase):
                     forward = installation["forward_offset_m"]
                     np.testing.assert_allclose(tcp[:3,3],(wrist@np.array([MOUNT_X+height+forward,0.,MOUNT_Z,1.]))[:3],atol=2e-7)
                     np.testing.assert_allclose(tcp[:3,:3],wrist[:3,:3]@TOOL_ROTATION,atol=2e-7)
+
+    @unittest.skipUnless(FRANKA.urdf.is_file(), "Download native Franka assets")
+    def test_franka_planner_matches_mounts_with_parallel_slides(self):
+        """The shared finger math must agree with the serialized Panda URDF."""
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            for scale in (.65, .75, .8):
+                installation = mechanism_installation(scale, mechanism=FRANKA)
+                height = .055 * scale
+                urdf = make_planning_urdf(out, height, scale, installation, FRANKA)
+                planner = mplib.Planner(urdf=urdf, srdf=out / "soft_franka.srdf",
+                                        move_group="soft_grasp_tcp",
+                                        user_joint_names=list(FRANKA.joint_names))
+                base = np.eye(4)
+                base[:3, :3] = Rotation.from_euler("xyz", [.1, -.2, 1.57]).as_matrix()
+                base[:3, 3] = [.3, -.45, .765]
+                for slides in ((.04, .04), (.011, .017), (0., 0.)):
+                    q = np.r_[[.3, -.4, .5, -.7, .8, -.6, .4], slides]
+                    kin = planner.pinocchio_model
+                    kin.compute_forward_kinematics(q)
+                    expected = mechanism_mounts(q, base, installation, FRANKA)
+                    links = mechanism_fk(q, mechanism=FRANKA)
+                    for side, name in enumerate(("soft_left", "soft_right")):
+                        actual = base @ kin.get_link_pose(
+                            planner.link_name_2_idx[name]).to_transformation_matrix()
+                        np.testing.assert_allclose(actual, expected[side], atol=2e-7)
+                        slide_pose = base @ links[FRANKA.slides[side].link]
+                        for component, mesh in mechanism_fixtures(scale, side, installation, FRANKA).items():
+                            fixture = base @ kin.get_link_pose(
+                                planner.link_name_2_idx[name + "_" + component]).to_transformation_matrix()
+                            import trimesh
+                            saved = trimesh.load(out / (name + "_" + component + ".obj"),
+                                                 force="mesh", process=False)
+                            np.testing.assert_allclose(
+                                saved.vertices @ fixture[:3, :3].T + fixture[:3, 3],
+                                mesh.vertices @ slide_pose[:3, :3].T + slide_pose[:3, 3],
+                                atol=2e-7)
+                    wrist = base @ kin.get_link_pose(
+                        planner.link_name_2_idx[FRANKA.hand_link]).to_transformation_matrix()
+                    tcp = base @ kin.get_link_pose(
+                        planner.link_name_2_idx["soft_grasp_tcp"]).to_transformation_matrix()
+                    np.testing.assert_allclose(
+                        tcp[:3, 3],
+                        (wrist @ np.r_[FRANKA.tool_origin_m + FRANKA.growth_axis_in_hand * (
+                            height + installation["forward_offset_m"]), 1.])[:3], atol=2e-7)
+                    np.testing.assert_allclose(tcp[:3, :3], wrist[:3, :3] @ FRANKA.rotation, atol=2e-7)
+
+    def test_mixed_episode_places_the_panda_at_the_x5_station(self):
+        from soft_sim.sim import robodojo
+        config = robodojo.robot_config(("x5", "franka"))
+        self.assertEqual([entry["robot_name"] for entry in config["robots"]], ["x5", "franka"])
+        stations = robodojo.load_yaml("env_cfg/robot/dual_x5.yml")["robots"]
+        self.assertEqual(config["robots"][1]["default_root_pos"], list(stations[1]["default_root_pos"]))
+        self.assertEqual(config["robots"][1]["default_root_rot"], list(stations[1]["default_root_rot"]))
+        self.assertNotIn("type", config["robots"][1])
+        self.assertFalse(any(entry["need_planner"] for entry in config["robots"]))
+
+    def test_scene_joint_vector_uses_the_recorded_articulation_order(self):
+        scene = dict(initial_q=[1, 2, 3, 4, 5, 6, 7, .04, .04],
+                     joint_names=["x" + name for name in FRANKA.joint_names])
+        with self.assertRaises(ValueError):
+            scene_joint_vector(scene, FRANKA)
+        scene["joint_names"] = list(FRANKA.joint_names)
+        np.testing.assert_allclose(scene_joint_vector(scene, FRANKA), scene["initial_q"])
 
     def test_measured_mount_surfaces_close_without_overlap_and_allow_native_travel(self):
         for scale in (.65, .75, .8):

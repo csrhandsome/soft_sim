@@ -16,20 +16,20 @@ import time
 import numpy as np
 
 from soft_sim.config import ROOT, ExperimentConfig
-from soft_sim.execution import pickup_phases, trajectory_command
+from soft_sim.execution import phase_commands, pickup_phases
 from soft_sim.geometry import camera_intrinsics
 from soft_sim.mesh import tet_volumes
 from soft_sim.recording.capture import EpisodeRecorder
-from soft_sim.robots.x5.mount_geometry import MountedFixtures, measured_installation
-from soft_sim.robots.x5.soft_tool import (
-    FINGER_LINKS, mounts_from_links, mounts_from_q, scale_config,
+from soft_sim.robots.fingers import (
+    MountedFixtures, finger_in_link, link_transforms, measured_installation, mounts_from_q, scale_config,
 )
+from soft_sim.robots.mechanism import mechanism
 from soft_sim.runtime import run as run_process
 from soft_sim.sim import robodojo
 from soft_sim.sim.cameras import task_camera_capture
 from soft_sim.sim.launcher import create_simulation_app
-from soft_sim.sim.scene import SceneExporter
-from soft_sim.sim.soft_tool import MountedSoftTool
+from soft_sim.sim.scene import SceneExporter, pose_matrix
+from soft_sim.sim.soft_tool import MountedSoftTool, capture_mounted_tools
 from soft_sim.storage import RunStore, Storage
 
 
@@ -37,24 +37,28 @@ from soft_sim.storage import RunStore, Storage
 def build_config(args):
     """Typed defaults from the config file, then explicit CLI overrides only."""
     cfg = ExperimentConfig.load(args.config, material_preset=getattr(args, "material", None))
-    # The replacement fingers ride the original X5 slides; the stock gripper
-    # model is unused, so no legacy robot profile is reused.
-    cfg.gripper.profile = "native_x5"
+    # The replacement fingers ride the original slides; the stock gripper model
+    # is unused, so no legacy robot profile is reused.
     cfg.gripper.base_height_m = 0.
-    cfg.gripper.open_jaw_width_m = .088
     cfgs = {
-        "task.name": args.task, "task.seed": args.seed, "task.active_arm": args.active_arm,
+        "task.name": args.task, "task.seed": args.seed, "task.robot": args.robot,
+        "task.active_arm": args.active_arm,
         "task.finger_scale": args.finger_scale, "task.target_label": args.target_label,
         "task.joint_control": args.joint_control,
         "task.adapter_offset_m": args.adapter_offset,
         "task.texture_max_resolution": args.texture_max_resolution,
+        "mesh.eliminate_fixed_cells": args.fixed_cell_elimination,
         "simulation.timestep_s": args.dt, "simulation.solver_iterations": args.solver_iterations,
         "simulation.deformable_vertex_velocity_damping": args.vertex_velocity_damping,
         "planning.friction": args.planning_friction, "planning.max_attempts": args.planning_attempts,
         "planning.indent_m": args.indent,
         "recording.fps": args.fps, "recording.dataset_id": args.dataset_id,
+        "recording.success_only": getattr(args, "success_only", None),
     }
     cfg.apply_overrides(cfgs)
+    active = mechanism(cfg.task.robot)
+    cfg.gripper.profile = f"native_{active.name}"
+    cfg.gripper.open_jaw_width_m = active.max_open_width_m
     cfg.simulation.contact_offset_m = .00025
     cfg.camera.width = cfg.camera.height = 256
     cfg.object.fixed = False
@@ -91,8 +95,8 @@ def validate_arguments(args):
 
 
 def dataset_root_for(cfg, storage):
-    """One collection per task; seeds are episodes inside it."""
-    dataset_id = cfg.recording.dataset_id or f"x5_{cfg.task.name}_v1"
+    """One collection per task and mechanism; seeds are episodes inside it."""
+    dataset_id = cfg.recording.dataset_id or f"{cfg.task.robot}_{cfg.task.name}_v1"
     return storage.dataset_dir(dataset_id), dataset_id
 
 
@@ -103,7 +107,11 @@ def run(args):
     task, seed, mode = cfg.task.name, cfg.task.seed, args.mode
     if mode == "replay" and task != "general_pickup":
         raise SystemExit("Use --mode collect for stack_blocks; replay accepts a general_pickup plan")
-    installation = measured_installation(cfg.task.finger_scale)
+    arm = mechanism(cfg.task.robot)
+    mechanisms = [mechanism("x5") for _ in range(2)]
+    mechanisms[cfg.task.active_arm] = arm
+    installations = [measured_installation(cfg.task.finger_scale, mechanism=entry) for entry in mechanisms]
+    installation = installations[cfg.task.active_arm]
     layout_path = (Path(args.layout) if args.layout else robodojo.layout_path(task, seed)).resolve()
     layout = json.loads(layout_path.read_text())
     layout_hash = hashlib.sha256(layout_path.read_bytes()).hexdigest()
@@ -143,20 +151,38 @@ def run(args):
         import torch
 
         task_name, Task = robodojo.load_task_class(task)
+        robot_cfg = robodojo.robot_config([entry.name for entry in mechanisms])
         # Original task scene and layout; only the embodiment and sensors change.
         config = robodojo.task_configuration(
             task_name, seed=seed, dt=cfg.simulation.timestep_s,
             solver_iterations=cfg.simulation.solver_iterations,
-            texture_max_resolution=cfg.task.texture_max_resolution)
-        robot_cfg = robodojo.robot_config()
+            texture_max_resolution=cfg.task.texture_max_resolution, robot=robot_cfg)
+        missing = arm.missing_assets()
+        if missing:
+            raise SystemExit(f"RoboDojo snapshot is missing {arm.name} assets: {', '.join(missing)}")
         arm_index = cfg.task.active_arm
-        q_initial = np.r_[np.zeros(6), .044, .044]
-        base = robodojo.arm_root_transform(robot_cfg, arm_index)
+        bases = [robodojo.arm_root_transform(robot_cfg, index) for index in range(len(mechanisms))]
+        base = bases[arm_index]
+        # The ROM is reset to the upstream init pose; the FEM must start there,
+        # not at a nominal pose the robot never holds.
+        initial_q = []
+        for entry in mechanisms:
+            upstream = robodojo.robot_init_joint_pos(entry.name)
+            missing = set(entry.joint_names) - set(upstream)
+            if missing:
+                raise RuntimeError(f"{entry.name} upstream init pose lacks {sorted(missing)}")
+            initial_q.append(np.array([upstream[name] for name in entry.joint_names]))
+        mount_in_links = [np.stack([finger_in_link(side, inst, entry) for side in (0, 1)])
+                          for entry, inst in zip(mechanisms, installations)]
+        follow_backend = os.environ.get("SOFT_SIM_FOLLOW_BACKEND", "cpu")
+        if follow_backend not in ("cpu", "gpu"):
+            raise ValueError("SOFT_SIM_FOLLOW_BACKEND must be cpu or gpu")
 
         class SoftTask(Task):
             tool = None
             tool_initialized = False
             tools = None
+            gpu_follower = None
 
             def __init__(self, *a, **kw):
                 super().__init__(*a, **kw)
@@ -169,8 +195,9 @@ def run(args):
                 self.tools = []
                 self.removed_finger_colliders = {}
                 for index in range(len(robot_cfg["robots"])):
-                    for name in FINGER_LINKS:
-                        path = f"/World/envs/env_0/robot{index}/{name}"
+                    entry, inst = mechanisms[index], installations[index]
+                    for name in entry.finger_links:
+                        path = robodojo.robot_link_path(self.stage, index, name)
                         prim = self.stage.GetPrimAtPath(path)
                         prim.SetInstanceable(False)
                         # The USD has nested instanced collision subtrees.
@@ -191,11 +218,9 @@ def run(args):
                                 UsdPhysics.CollisionAPI(child).CreateCollisionEnabledAttr(False)
                                 disabled += 1
                         self.removed_finger_colliders[path] = disabled
-                    arm_base = base.copy()
-                    arm_base[:3, 3] = robot_cfg["robots"][index]["default_root_pos"]
-                    mounts = mounts_from_q(q_initial, arm_base, installation)
-                    filter_paths = {side: [f"/World/envs/env_0/robot{index}/{name}"]
-                                    for side, name in enumerate(FINGER_LINKS)}
+                    mounts = mounts_from_q(initial_q[index], bases[index], inst, entry)
+                    filter_paths = {side: [robodojo.robot_link_path(self.stage, index, name)]
+                                    for side, name in enumerate(entry.finger_links)}
                     tool_config = deepcopy(cfg)
                     tool_config.simulation.render = index == arm_index
                     tool = MountedSoftTool(self.stage, tool_config, mounts,
@@ -205,8 +230,8 @@ def run(args):
                         rt_subframes=4, lighting_samples_per_pixel=8)
                     self.tools.append(tool)
                     tool.fixtures = MountedFixtures(self.stage,
-                        [f"/World/envs/env_0/robot{index}/{name}" for name in FINGER_LINKS],
-                        cfg.task.finger_scale, installation, tool.paths)
+                        [robodojo.robot_link_path(self.stage, index, name) for name in entry.finger_links],
+                        cfg.task.finger_scale, inst, tool.paths, entry)
                     tool.fixtures.follow(mounts)
                 self.tool = self.tools[arm_index]
 
@@ -216,21 +241,29 @@ def run(args):
                         for tool in self.tools:
                             tool.initialize()
                         self.tool_initialized = True
-                    self.follow_tools()
+                    self.follow_tools(update_cameras=render)
                 return super().sim_step(render=render)
 
-            def follow_tools(self):
+            def follow_tools(self, *, update_cameras=True):
+                if follow_backend == "gpu" and self.tool_initialized:
+                    if self.gpu_follower is None:
+                        from soft_sim.sim.gpu_follow import GpuToolFollower
+                        self.gpu_follower = GpuToolFollower(self.tools,
+                            list(self.robot_manager.robot_key),
+                            [entry.finger_links for entry in mechanisms], mount_in_links)
+                    self.gpu_follower.follow(update_cameras=update_cameras)
+                    return
                 for index, tool in enumerate(self.tools):
                     articulation = self.robot_manager.robot_key[index]
                     poses = articulation.data.body_link_pose_w[0].cpu().numpy()
                     links = []
-                    for name in FINGER_LINKS:
+                    for name in mechanisms[index].finger_links:
                         pose = poses[articulation.body_names.index(name)]
                         matrix = np.eye(4)
                         matrix[:3, 3] = pose[:3]
                         matrix[:3, :3] = Rotation.from_quat(np.r_[pose[4:7], pose[3]]).as_matrix()
                         links.append(matrix)
-                    tool.follow(mounts_from_links(links, installation))
+                    tool.follow(np.asarray(links) @ mount_in_links[index], update_cameras=update_cameras)
 
         env = SoftTask(config, app)
         env.success = [True]
@@ -240,6 +273,17 @@ def run(args):
         print("TASK_STAGE after_reset", time.time(), flush=True)
         env.scene_manager.apply_saved_poses([0])
         print("TASK_STAGE after_apply_saved_poses", time.time(), flush=True)
+        # Fail loudly instead of planning against links the loaded USD lacks.
+        for index, entry in enumerate(mechanisms):
+            bodies = set(env.robot_manager.robot_key[index].body_names)
+            expected_links = {entry.hand_link, *entry.finger_links}
+            if not expected_links <= bodies:
+                raise RuntimeError(f"robot{index} USD is missing {sorted(expected_links - bodies)} "
+                                   f"for the {entry.name} finger mechanism")
+        if os.environ.get("SOFT_SIM_DEBUG_JOINTS"):
+            for index, articulation in enumerate(env.robot_manager.robot_key):
+                print("JOINTS", index, "after_reset",
+                      np.round(articulation.data.joint_pos[0].cpu().numpy(), 4).tolist(), flush=True)
         env.follow_tools()
         for tool in env.tools:
             tool.reset_to_mounts(tool.mounts)
@@ -247,8 +291,22 @@ def run(args):
         for _ in range(round(.3 / cfg.simulation.timestep_s)):
             env.sim_step(render=False)
         print("TASK_STAGE after_300_steps", time.time(), flush=True)
+        if os.environ.get("SOFT_SIM_DEBUG_JOINTS"):
+            for index, articulation in enumerate(env.robot_manager.robot_key):
+                print("JOINTS", index, "after_300",
+                      np.round(articulation.data.joint_pos[0].cpu().numpy(), 4).tolist(), flush=True)
         env.robot_manager.set_origin_endpose()
         robot = env.robot_manager.robot_key[arm_index]
+        # The articulation root settles under gravity and joint compliance, so
+        # the nominal yml pose is only a pre-reset placeholder. Everything the
+        # planner sees must use the measured base frame.
+        nominal_base = base
+        root_pose = np.asarray(robot.data.root_link_pose_w[0].detach().cpu().numpy(), dtype=float)
+        base = pose_matrix((root_pose[:3], root_pose[3:]))
+        root_body = robot.body_names[0]
+        if root_body != arm.base_link:
+            raise RuntimeError(f"Articulation root {root_body!r} is not the {arm.name} base link "
+                               f"{arm.base_link!r}")
         external, product, external_calibration = task_camera_capture(env)
 
         fem_state, fem_report = {}, []
@@ -291,7 +349,8 @@ def run(args):
             previews / "preview_external.png")
         store.record("previews.initial", previews)
 
-        expected = mounts_from_q(robot.data.joint_pos[0].cpu().numpy(), base, installation)
+        expected = mounts_from_q(robot.data.joint_pos[0].cpu().numpy(), base, installation, arm,
+                                 joint_names=robot.joint_names)
         actual = env.tool.mounts
         position_error = float(np.linalg.norm(expected[:, :3, 3] - actual[:, :3, 3], axis=1).max())
         rotation_error = float(np.abs(expected[:, :3, :3] - actual[:, :3, :3]).max())
@@ -299,7 +358,11 @@ def run(args):
                       max_translation_error_m=position_error,
                       max_rotation_matrix_error=rotation_error,
                       joint_names=robot.joint_names, measured_mounts=actual.tolist(),
-                      fk_mounts=expected.tolist(), installation=installation)
+                      fk_mounts=expected.tolist(), installation=installation,
+                      robot=arm.name, base_pose=base.tolist(),
+                      nominal_base_pose=nominal_base.tolist(),
+                      root_settle_translation_m=float(np.linalg.norm(
+                          base[:3, 3] - nominal_base[:3, 3])))
         if hasattr(env.tool, "fixtures"):
             report["fixture_mount_errors"] = [tool.fixtures.mount_error(tool.mounts) for tool in env.tools]
             report["valid"] = report["valid"] and all(
@@ -308,12 +371,26 @@ def run(args):
                 for error in report["fixture_mount_errors"])
         store.write_json("reports/initial/mount_validation.json", report)
         if not report["valid"]:
-            raise RuntimeError("Native X5 articulation and soft-finger planning mounts disagree")
+            # Per-link evidence: the mount pair alone cannot say which joint
+            # or frame diverged between the URDF snapshot and the articulation.
+            q = robot.data.joint_pos[0].cpu().numpy()
+            links = link_transforms(q, mechanism=arm, joint_names=robot.joint_names)
+            bodies = {name: index for index, name in enumerate(robot.body_names)}
+            poses = robot.data.body_link_pose_w[0].cpu().numpy()
+            evidence = {name: dict(fk=(base @ links[name]).tolist(),
+                                   isaac=pose_matrix(robodojo.numpy_pose(
+                                       (poses[index][:3], poses[index][3:]))).tolist())
+                        for name, index in bodies.items() if name in links}
+            store.write_json("diagnostics/mount_disagreement.json", dict(
+                robot=arm.name, joint_names=list(robot.joint_names),
+                joint_positions=np.asarray(q).tolist(), base=base.tolist(), links=evidence))
+            raise RuntimeError(f"{arm.name} articulation and soft-finger planning mounts disagree")
 
         manager = env.scene_manager.layout_manager
         exporter = SceneExporter(
             env=env, cfg=cfg, layout=layout, layout_path=layout_path, layout_hash=layout_hash,
             installation=installation, base=base, arm_index=arm_index,
+            mechanisms=mechanisms, installations=installations,
             fem_report=fem_report, fem_valid=fem_valid,
             finger_scale=cfg.task.finger_scale, adapter_offset_m=cfg.task.adapter_offset_m,
             texture_max_resolution=cfg.task.texture_max_resolution, task_name=task)
@@ -397,7 +474,7 @@ def run(args):
             loaded = json.loads(path.read_text())
             if (loaded.get("status") != "planned" or not loaded.get("collision_checked")
                     or loaded["scene"].get("layout_sha256") != layout_hash
-                    or loaded["scene"].get("robot_name") != "x5"
+                    or loaded["scene"].get("robot_name") != cfg.task.robot
                     or not np.isclose(loaded["scene"].get("finger_scale", 1.), cfg.task.finger_scale)):
                 raise ValueError("Plan must match the task layout, robot and finger scale")
             if loaded["scene"].get("finger_installation") != snapshot_scene.get("finger_installation"):
@@ -422,14 +499,15 @@ def run(args):
         calibration = dict(finger_intrinsics=np.stack([camera_intrinsics(cfg.camera, 2.8)] * 2).tolist(),
             finger_resolution=[256, 256], **external_calibration,
             material=cfg.to_dict()["material"], task_scene=scene,
-            robot_type="dual_x5_softfinger", joint_names=joint_names, active_arm=arm_index,
+            robot_type=arm.calibration_robot_type, joint_names=joint_names, active_arm=arm_index,
             finger_scale=cfg.task.finger_scale, joint_control=cfg.task.joint_control,
             rendering=env.tool.render_settings, finger_projection=env.tool.camera_projection)
         if hasattr(env.tool, "fixtures"):
             calibration["fixture_paths"] = env.tool.fixtures.paths
         recorder = EpisodeRecorder(capture_dir, cfg.recording.fps, calibration,
             dataset_root=dataset_root, repo_id=cfg.recording.repo_id,
-            task=env.gen_instruction(0)[0], run_id=store.run_id)
+            task=env.gen_instruction(0)[0], run_id=store.run_id,
+            success_only=cfg.recording.success_only)
         store.update(capture="capturing")
         np.savez_compressed(capture_dir / "finger_reference.npz", **env.tool.reference_state)
         sim_step, last_width = 0, opened
@@ -445,6 +523,8 @@ def run(args):
             env.get_score()
         rejected = False
         stride = round(1 / (cfg.recording.fps * cfg.simulation.timestep_s))
+        collection_started = time.perf_counter()
+        phase_timings = []
         for operation_index, (target_label, support_label) in enumerate(operations):
             operation_dir = plans_dir / f"operation_{operation_index:03d}"
             if operation_index:
@@ -473,38 +553,45 @@ def run(args):
             store.write_json("plans/executed.json", executed_plans)
             for phase, duration, trajectory, width in pickup_phases(plan, paths):
                 print("TASK_PHASE", operation_index, target_label, phase, flush=True)
+                phase_started = time.perf_counter()
+                phase_capture_s = 0.
+                phase_physics_s = 0.
                 steps = round(duration / cfg.simulation.timestep_s)
+                phase_positions, phase_velocities, phase_widths = phase_commands(
+                    trajectory, steps, cfg.simulation.timestep_s, last_width, width)
+                position_commands = torch.as_tensor(phase_positions, device=robot.device, dtype=torch.float32)
+                velocity_commands = torch.as_tensor(phase_velocities, device=robot.device, dtype=torch.float32)
+                zero_commands = torch.zeros_like(position_commands) if cfg.task.joint_control == "kinematic" else None
+                preparation_s = time.perf_counter() - phase_started
                 for index in range(steps):
-                    positions, velocities, jaw = trajectory_command(
-                        trajectory, steps * cfg.simulation.timestep_s,
-                        (index + 1) * cfg.simulation.timestep_s, last_width, width)
-                    command = torch.as_tensor(positions[None], device=robot.device, dtype=torch.float32)
+                    physics_started = time.perf_counter()
+                    command = position_commands[index:index + 1]
+                    jaw = float(phase_widths[index])
                     if cfg.task.joint_control == "kinematic":
-                        robot.write_joint_state_to_sim(command, torch.zeros_like(command))
+                        robot.write_joint_state_to_sim(command, zero_commands[index:index + 1])
                     robot.set_joint_position_target(command)
-                    robot.set_joint_velocity_target(torch.as_tensor(
-                        velocities[None], device=robot.device, dtype=torch.float32))
+                    robot.set_joint_velocity_target(velocity_commands[index:index + 1])
                     parked_commands[arm_index] = command[0]
                     for parked_index, articulation in enumerate(recorded_robots):
                         if parked_index != arm_index:
                             articulation.set_joint_position_target(parked_commands[parked_index][None])
                     env.sim.scene.update(cfg.simulation.timestep_s)
                     env.sim_step(render=False)
+                    phase_physics_s += time.perf_counter() - physics_started
                     sim_step += 1
                     if sim_step % stride == 0:
-                        for tool in env.tools:
-                            tool.sync_render_surface()
-                        rgb, depth = env.tool.capture(env.sim.sim)
+                        capture_started = time.perf_counter()
+                        rgb, depth, all_nodes = capture_mounted_tools(env.tools, arm_index, env.sim.sim)
+                        nodes = all_nodes[arm_index]
                         position, quat = object_pose()
-                        nodes = env.tool.positions()
                         minimum_jacobians = np.empty((len(env.tools), 2))
                         maximum_pin_errors = np.empty((len(env.tools), 2))
                         for tool_index, tool in enumerate(env.tools):
-                            for side, points in enumerate(nodes if tool_index == arm_index else tool.positions()):
+                            for side, points in enumerate(all_nodes[tool_index]):
                                 mount = tool.mounts[side]
                                 local = (points - mount[:3, 3]) @ mount[:3, :3]
                                 rest, tets = tool.local_nodes[side], tool.sim_tets[side]
-                                jacobian = tet_volumes(local, tets) / tet_volumes(rest, tets)
+                                jacobian = tet_volumes(local, tets) / tool.rest_volumes[side]
                                 pin_error = float(np.linalg.norm(local - rest, axis=1)[tool.pin_masks[side]].max())
                                 minimum_jacobians[tool_index, side] = jacobian.min()
                                 maximum_pin_errors[tool_index, side] = pin_error
@@ -546,6 +633,12 @@ def run(args):
                             finger_mounts=env.tool.mounts, finger_nodes_left=nodes[0],
                             finger_nodes_right=nodes[1], width_parameter_m=jaw, **fixture_state)
                         env.reward_manager.step(env_idx_list=[0])
+                        phase_capture_s += time.perf_counter() - capture_started
+                phase_timings.append(dict(operation_index=operation_index, phase=phase,
+                    physics_steps=steps, simulation_s=steps * cfg.simulation.timestep_s,
+                    wall_s=time.perf_counter() - phase_started,
+                    command_preparation_s=preparation_s, capture_and_record_s=phase_capture_s,
+                    control_and_physics_s=phase_physics_s))
                 lift = float(object_pose()[0][2]) - operation_initial_z
                 checkpoints.append(dict(operation_index=operation_index, target_label=target_label,
                                         phase=phase, object_lift_m=lift))
@@ -557,38 +650,53 @@ def run(args):
             if rejected:
                 break
         actual_lift = float(object_pose()[0][2]) - operation_initial_z
+        collection_wall_s = time.perf_counter() - collection_started
+        store.write_json("diagnostics/collection_timing.json", dict(
+            scope="Collection only, excluding initial setup and dataset finalization; includes inter-operation planning",
+            wall_s=collection_wall_s, physics_steps=sim_step,
+            simulation_s=sim_step * cfg.simulation.timestep_s,
+            captured_frames=len(recorder.rows), timestep_s=cfg.simulation.timestep_s,
+            fps=cfg.recording.fps, rendering=env.tool.render_settings,
+            follow_backend=follow_backend, phases=phase_timings))
         rewards = env.reward_manager.get_reward()
         success = bool(rewards[0] > .999)
         scores = env.reward_manager.get_score(reward_lst=rewards) if hasattr(env, "get_score") else None
         result = dict(task=task_name, success=success, object_lift_m=actual_lift,
             official_task_manager=True, official_benchmark_evaluation=False,
-            embodiment_variant=scene["embodiment_variant"], checkpoints=checkpoints,
+            embodiment_variant=scene["embodiment_variant"], active_robot=arm.name,
+            checkpoints=checkpoints,
             joint_control=cfg.task.joint_control, task_rewards=rewards, task_scores=scores,
             task_object_labels=task_labels, executed_plans=executed_plans,
             coupling="prescribed FEM base nodes, no reaction torque feedback", config=cfg.to_dict())
         store.write_json("results/task.json", result)
         store.update(task_success=success)
         recorder.close(complete=True, result={k: v for k, v in result.items() if k != "config"})
-        store.update(capture="committed",
-                     datasets=[dict(dataset_id=dataset_id, dataset_root=storage.relative(dataset_root),
-                                    episode_index=recorder._read_metadata().get("episode_index"))])
+        metadata = recorder._read_metadata()
+        store.update(capture=metadata["status"],
+                     datasets=([dict(dataset_id=dataset_id, dataset_root=storage.relative(dataset_root),
+                                     episode_index=metadata.get("episode_index"))]
+                               if recorder.committed else []))
         print("TASK_RESULT", json.dumps(result), flush=True)
         completed = True
         store.update(execution="completed")
-        print(f"RUN_COMPLETE {store.run_id} dataset={dataset_id} "
-              f"episode={recorder._read_metadata().get('episode_index')} root={dataset_root}")
+        if recorder.committed:
+            print(f"RUN_COMPLETE {store.run_id} dataset={dataset_id} "
+                  f"episode={metadata.get('episode_index')} root={dataset_root}")
+        else:
+            print(f"RUN_DISCARDED {store.run_id} task_success={success}", flush=True)
     except BaseException as error:
         import traceback
         traceback.print_exc()
         store.write_json("run_failure.json", dict(
             error_type=type(error).__name__, message=str(error)))
         store.append_error(f"{type(error).__name__}: {error}")
-        store.update(execution="failed", task_success=None)
+        store.update(execution="failed")
         raise
     finally:
         try:
             if recorder is not None:
                 recorder.close()
+                store.update(capture=recorder._read_metadata()["status"])
         finally:
             store.write_json("run_status.json", dict(
                 completed=completed, mode=mode, task=task,

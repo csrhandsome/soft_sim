@@ -23,22 +23,28 @@ def build_parser(argv=None):
     parser.add_argument("--layout", type=Path, help="Saved layout JSON; defaults to the official one")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--active-arm", type=int, choices=(0, 1))
+    parser.add_argument("--robot", choices=("x5", "franka"),
+                        help="Override task.robot; prefer configs/general_pickup_franka.json")
     parser.add_argument("--mode", choices=("export", "assembly", "replay", "collect"),
                         default=default_mode)
     parser.add_argument("--grasp-plan", type=Path, help="Saved plan for replay")
     parser.add_argument("--run-id", help="Explicit run id; the default is generated")
     parser.add_argument("--storage-root", type=Path, help="Storage root (default: artifacts/)")
     parser.add_argument("--dataset-id", help="LeRobot collection name; seeds are episodes in it")
+    parser.add_argument("--success-only", action=argparse.BooleanOptionalAction, default=None,
+                        help="Commit only tasks marked successful by RewardManager (default: enabled)")
     parser.add_argument("--finger-scale", type=float, help="Uniform soft-finger scale")
     parser.add_argument("--target-label")
     parser.add_argument("--fps", type=int, help="Recording frame rate")
     parser.add_argument("--dt", type=float, help="Physics timestep in seconds")
     parser.add_argument("--adapter-offset", type=float, help="Adapter offset in meters")
     parser.add_argument("--fem-mesh", type=Path, help="Conforming tetrahedral mesh NPZ")
+    parser.add_argument("--fixed-cell-elimination", action=argparse.BooleanOptionalAction,
+                        default=None, help="Skip fully fixed FEM cells; keep the full collision mesh (default: enabled)")
     parser.add_argument("--solver-iterations", type=int)
     parser.add_argument("--vertex-velocity-damping", type=float)
     parser.add_argument("--joint-control", choices=("position", "kinematic"),
-                        help="Position targets use the original X5 drives; kinematic is diagnostic")
+                        help="Position targets use the original arm drives; kinematic is diagnostic")
     parser.add_argument("--contact-height", type=float, help="Contact band on the scaled finger, m")
     parser.add_argument("--indent", type=float, help="Per-side grasp preload, m")
     parser.add_argument("--planning-friction", type=float)

@@ -7,6 +7,7 @@ import numpy as np
 from soft_sim.mesh import tet_volumes
 from soft_sim.geometry import camera_intrinsics
 from soft_sim.execution import trajectory_command
+from soft_sim.robots.mechanism import mechanism
 
 
 def run_assembly_motion(env, out, dt, scene):
@@ -27,16 +28,24 @@ def run_assembly_motion(env, out, dt, scene):
             references[f"robot{index}_pin_{side}"] = tool.pin_masks[side]
     np.savez_compressed(out / "reference.npz", **references)
     rows, step = [], 0
-    last_width = .088
+    # Each arm sweeps its own slide travel; the parked arm keeps its stock body.
+    mechanisms = [mechanism("x5") for _ in robots]
+    mechanisms[scene["active_arm"]] = mechanism(scene["robot_name"])
+    travel = [entry.max_open_width_m for entry in mechanisms]
+    closed = [0.] * len(robots)
     worst_jacobian, worst_pin = float("inf"), 0.
-    for phase, duration, width in (("close", 2., 0.), ("closed_hold", .5, 0.),
-                                   ("open", 2., .088), ("open_hold", .5, .088)):
+    for phase, duration, last_widths, widths in (("close", 2., travel, closed),
+                                                ("closed_hold", .5, closed, closed),
+                                                ("open", 2., closed, travel),
+                                                ("open_hold", .5, travel, travel)):
         steps = round(duration / dt)
         print("ASSEMBLY_PHASE", phase, flush=True)
         for sample in range(steps):
+            jaws = list(last_widths)
             for index, robot in enumerate(robots):
                 path = np.repeat(initial[index][None, :-2], 2, axis=0)
-                q, velocity, jaw = trajectory_command(path, steps*dt, (sample+1)*dt, last_width, width)
+                q, velocity, jaws[index] = trajectory_command(
+                    path, steps*dt, (sample+1)*dt, last_widths[index], widths[index])
                 robot.set_joint_position_target(torch.as_tensor(q[None], device=robot.device, dtype=torch.float32))
                 robot.set_joint_velocity_target(torch.as_tensor(velocity[None], device=robot.device, dtype=torch.float32))
             env.sim.scene.update(dt)
@@ -45,7 +54,8 @@ def run_assembly_motion(env, out, dt, scene):
             if step % round(.1/dt) and sample != steps-1:
                 continue
             state = {}
-            row = dict(phase=phase, time_s=step*dt, commanded_width_m=jaw, arms=[])
+            row = dict(phase=phase, time_s=step*dt, commanded_width_m=jaws[scene["active_arm"]],
+                       commanded_widths_m=list(jaws), arms=[])
             for index, (robot, tool) in enumerate(zip(robots, env.tools)):
                 actual = robot.data.joint_pos[0].cpu().numpy().copy()
                 state[f"robot{index}_q"] = actual
@@ -80,10 +90,9 @@ def run_assembly_motion(env, out, dt, scene):
             (out / "samples.json").write_text(json.dumps(rows, indent=2))
             if not all(side["valid"] for arm in row["arms"] for side in arm["sides"]):
                 raise RuntimeError("Full-travel assembly FEM check failed; diagnostic samples retained")
-        last_width = width
     endpoints = [row for row in rows if row["phase"].endswith("hold")]
-    tracking = max(abs(value-row["commanded_width_m"]/2) for row in endpoints
-                   for arm in row["arms"] for value in arm["slides_m"])
+    tracking = max(abs(value-row["commanded_widths_m"][index]/2) for row in endpoints
+                   for index, arm in enumerate(row["arms"]) for value in arm["slides_m"])
     result = dict(scope=__doc__.strip(), task_success_evaluated=False,
         joint_control="original position/velocity targets", samples=len(rows),
         minimum_jacobian=worst_jacobian, maximum_pin_error_m=worst_pin,

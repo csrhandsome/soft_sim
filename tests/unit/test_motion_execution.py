@@ -4,7 +4,8 @@ import unittest
 import numpy as np
 
 from soft_sim.execution import (
-    layout_target_parameters, pickup_phases, settled_phase_pairs, support_placement_translation, trajectory_command,
+    layout_target_parameters, phase_commands, pickup_phases, settled_phase_pairs,
+    support_placement_translation, trajectory_command,
 )
 
 
@@ -32,6 +33,35 @@ class MotionExecution(unittest.TestCase):
         np.testing.assert_allclose(positions, [.5, -.2, .044, .044])
         np.testing.assert_allclose(velocities, 0.)
         self.assertEqual(width, .088)
+
+    def test_prepared_phase_matches_every_scalar_command_including_knots_and_endpoint(self):
+        rng = np.random.default_rng(823)
+        for length, steps, dt, start, end in ((1, 50, .001, .02, .088),
+                (2, 1000, .001, .088, .02), (51, 1500, .001, .02, .02),
+                (103, 73, .003, .088, .02)):
+            path = rng.normal(size=(length, 6))
+            before = path.copy()
+            positions, velocities, widths = phase_commands(path, steps, dt, start, end)
+            expected = [trajectory_command(path, steps * dt, (i + 1) * dt, start, end)
+                        for i in range(steps)]
+            np.testing.assert_array_equal(positions, np.stack([row[0] for row in expected]))
+            np.testing.assert_array_equal(velocities, np.stack([row[1] for row in expected]))
+            np.testing.assert_array_equal(widths, [row[2] for row in expected])
+            np.testing.assert_array_equal(path, before)
+            # The float32 tensors supplied to the drives must also be identical.
+            np.testing.assert_array_equal(positions.astype(np.float32),
+                                          np.stack([row[0] for row in expected]).astype(np.float32))
+
+    def test_prepared_phase_rejects_bad_paths_and_step_counts(self):
+        for path in ([], [1., 2.], [[0., np.nan]], [[np.inf]]):
+            with self.assertRaises(ValueError):
+                phase_commands(path, 10, .001, .088, .02)
+        for steps in (0, -1, 2.5):
+            with self.assertRaises(ValueError):
+                phase_commands([[0., 0.]], steps, .001, .088, .02)
+        for dt in (0., -1., np.nan, np.inf):
+            with self.assertRaises(ValueError):
+                phase_commands([[0., 0.]], 10, dt, .088, .02)
 
     def test_repeated_holds_do_not_measure_the_transfer_between_them(self):
         rows = [dict(phase=phase, time_s=i*.1) for i, phase in enumerate(

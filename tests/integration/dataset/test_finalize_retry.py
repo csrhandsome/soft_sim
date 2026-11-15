@@ -9,9 +9,21 @@ import numpy as np
 
 from soft_sim.recording.capture import EpisodeRecorder
 from soft_sim.recording.finalize import finalize
+from soft_sim.contracts import ContractError
 
 
 class FinalizeRetry(unittest.TestCase):
+    def test_success_only_failure_cannot_be_committed_by_manual_finalize(self):
+        with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+            root = Path(temporary)
+            recorder = EpisodeRecorder(root / "capture", 20, {}, dataset_root=root / "dataset")
+            rgb = np.arange(48, dtype=np.uint8).reshape(4, 4, 3)
+            recorder.append(rgb, rgb, rgb, time_s=.05, phase="hold", joint_positions=np.zeros(6))
+            recorder.close(complete=True, result=dict(success=False))
+            with self.assertRaisesRegex(ContractError, "successful task"):
+                finalize(recorder.directory)
+            self.assertFalse((root / "dataset").exists())
+
     def build(self, root):
         recorder = EpisodeRecorder(root / "run/capture", 20,
             dict(robot_type="dual_x5_softfinger", joint_names=["j"], active_arm=1,

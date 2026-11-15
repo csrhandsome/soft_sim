@@ -33,6 +33,14 @@ def layout_path(task, seed):
     return SNAPSHOT / f"Assets/Eval_Layout/RoboDojo/arx_x5/0/{task}_{seed}.json"
 
 
+def robot_init_joint_pos(robot_name):
+    """Joint pose the upstream robot description applies at reset, by joint name."""
+    _ensure_snapshot_importable()
+    import importlib
+    module = importlib.import_module(f"env.robot_manager.robot_config.{robot_name}")
+    return dict(module.get_robot_config().init_state.joint_pos)
+
+
 def simulator_config(*, seed, dt, solver_iterations, texture_max_resolution):
     """Original sim configuration with only the validated overrides applied."""
     import numpy as np
@@ -53,12 +61,31 @@ def simulator_config(*, seed, dt, solver_iterations, texture_max_resolution):
     return config
 
 
-def robot_config(arm_count=2):
-    """Original dual X5 description with the upstream planner disabled."""
-    config = load_yaml("env_cfg/robot/dual_x5.yml")
-    for robot in config["robots"][:arm_count]:
-        robot["need_planner"] = False
-    return config
+def robot_config(robot_names=("x5", "x5")):
+    """Two-robot episode; the active arm may be replaced, the parked one stays stock.
+
+    Upstream robot descriptions are read, never copied. A replacement arm keeps
+    the X5 station it takes over so the official layout stays inside its reach,
+    and drops the upstream ``type: support`` tag because it is now the active
+    end effector rather than a passive third arm.
+    """
+    from copy import deepcopy
+    stations = load_yaml("env_cfg/robot/dual_x5.yml")["robots"]
+    mixed = load_yaml("env_cfg/robot/dual_x5_and_franka_competition.yml")["robots"]
+    candidates = {"x5": stations,
+                  "franka": [entry for entry in mixed if entry.get("robot_name") == "franka"]}
+    robots = []
+    for index, name in enumerate(robot_names):
+        if name not in candidates or not candidates[name]:
+            raise ValueError(f"Upstream robot description missing for {name!r}")
+        entry = deepcopy(candidates[name][index] if name == "x5" else candidates[name][0])
+        if name != "x5":
+            entry.pop("type", None)
+            entry["default_root_pos"] = list(stations[index]["default_root_pos"])
+            entry["default_root_rot"] = list(stations[index]["default_root_rot"])
+        entry["need_planner"] = False
+        robots.append(entry)
+    return {"robots": robots}
 
 
 def scene_config():
@@ -69,13 +96,13 @@ def task_env_config(task_name):
     return load_yaml(f"task/RoboDojo/config/{task_name}.yml")
 
 
-def task_configuration(task_name, *, seed, dt, solver_iterations, texture_max_resolution):
+def task_configuration(task_name, *, seed, dt, solver_iterations, texture_max_resolution, robot=None):
     """The OmegaConf object the upstream task class expects."""
     from omegaconf import OmegaConf
     return OmegaConf.create(dict(
         sim=simulator_config(seed=seed, dt=dt, solver_iterations=solver_iterations,
                              texture_max_resolution=texture_max_resolution),
-        robot=robot_config(), scene=scene_config(),
+        robot=robot if robot is not None else robot_config(), scene=scene_config(),
         camera=head_camera_config(),
         task_env=task_env_config(task_name)))
 
@@ -85,12 +112,35 @@ def head_camera_config():
 
     The robot manager injects factory wrist cameras into the task config.
     Reusing this config as CameraManager.init_config keeps only cam_head.
-    A null annotator disables the upstream tiled capture products.
+    Disable upstream annotators because RGB is captured explicitly. The
+    upstream capture manager requires an annotator mapping even when disabled.
     """
     from omegaconf import OmegaConf
     config = load_yaml("env_cfg/camera/camera_config.yml")
-    return OmegaConf.create(dict(default_frequency=None, annotator=None,
+    return OmegaConf.create(dict(default_frequency=None,
+                                 annotator=dict(common=dict(enabled=False)),
                                  cam_head=config["cam_head"]))
+
+
+def robot_link_path(stage, robot_index, link_name):
+    """USD path of one articulation link, whatever the upstream asset nests.
+
+    The X5 USD exposes its links directly under the spawned robot prim, while
+    Franka wraps them in a ``panda`` default prim. Search by name instead of
+    assuming a depth, so both snapshots load without a per-robot path table.
+    """
+    import sys as _sys
+    from pxr import Usd
+    root = stage.GetPrimAtPath(f"/World/envs/env_0/robot{robot_index}")
+    if not root or not root.IsValid():
+        raise RuntimeError(f"Missing robot prim for index {robot_index}")
+    names = []
+    for prim in Usd.PrimRange(root, Usd.TraverseInstanceProxies()):
+        if prim.GetName() == link_name and prim.GetTypeName() != "Mesh":
+            return str(prim.GetPath())
+        names.append(prim.GetName())
+    raise RuntimeError(f"Link {link_name!r} not found under {root.GetPath()}; "
+                       f"available prims: {sorted(set(names))[:40]}")
 
 
 def numpy_pose(pose):
@@ -107,7 +157,7 @@ def original_reward_poses(manager):
 
 
 def arm_root_transform(robot_description, arm_index, yaw_deg=90):
-    """World transform of the original X5 base (yaw 90 degrees, original position)."""
+    """World transform of the episode's arm base (original position, yaw 90)."""
     import numpy as np
     from scipy.spatial.transform import Rotation
     base = np.eye(4)

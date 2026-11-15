@@ -37,6 +37,15 @@ def export_states(run, destination):
     (destination / "episode.json").write_text(json.dumps(episode, indent=2))
 
 
+def fixture_slot(paths, link_name, component):
+    """Fixture slot by link/component suffix; the actor prefix is arbitrary."""
+    suffix = f"/{link_name}/SoftFixtures/{component}"
+    matches = [index for index, path in enumerate(paths) if path.endswith(suffix)]
+    if len(matches) != 1:
+        raise ValueError(f"Expected one fixture slot for {link_name}/{component}, got {matches}")
+    return matches[0]
+
+
 def same_vertices(first, second):
     if first.shape != second.shape:
         return False
@@ -48,8 +57,8 @@ def check(run, states):
     import trimesh
     from mplib.collision_detection import fcl
     from soft_sim.validation.installation import collision_object, wrist_obstacles
-    from soft_sim.robots.x5.mount_geometry import fixture_meshes
-    from soft_sim.robots.x5.soft_tool import finger_in_link, link_transforms
+    from soft_sim.robots.fingers import fixture_meshes, finger_in_link, link_transforms, scene_joint_vector
+    from soft_sim.robots.mechanism import mechanism
     from soft_sim.mesh import surface_faces
 
     episode = json.loads((states / "episode.json").read_text())
@@ -59,6 +68,7 @@ def check(run, states):
     if recorded_scene != scene:
         raise ValueError("Collision states must match the scene export")
     installation, scale = scene["finger_installation"], scene["finger_scale"]
+    arm = mechanism(scene["robot_name"])
     active = episode["calibration"]["active_arm"]
     joint_names = episode["calibration"]["joint_names"]
     joint_indices = [index for index, name in enumerate(joint_names) if name.startswith(f"robot{active}/")]
@@ -83,7 +93,7 @@ def check(run, states):
     table = trimesh.creation.box(extents=scene["table_size_m"])
     table.apply_translation(scene["table_center_m"])
     static["table"] = collision_object(table)
-    wrists = wrist_obstacles()
+    wrists = wrist_obstacles(arm)
     expected_contacts, intersections = Counter(), []
     maximum_post_step_translation_m = 0.
     maximum_post_step_rotation_error = 0.
@@ -91,10 +101,16 @@ def check(run, states):
     for row in episode["frames"]:
         with np.load(states / f"{row['index']:06d}.npz") as frame:
             mounts = frame["finger_mounts"]
-            links = link_transforms(frame["joint_positions"][joint_indices])
-            first_fixture = fixtures.index(f"/World/envs/env_0/robot{active}/link8/SoftFixtures/adapter")
-            wrist_pose = frame["fixture_to_world"][first_fixture] @ np.linalg.inv(finger_in_link(0, installation)) @ np.linalg.inv(
-                np.linalg.inv(links["link6"]) @ links["link8"])
+            q = frame["joint_positions"][joint_indices]
+            if arm.joint_names != tuple(joint_names[index] for index in joint_indices):
+                names = [joint_names[index] for index in joint_indices]
+                q = q[[names.index(name) for name in arm.joint_names]]
+            links = link_transforms(q, mechanism=arm)
+            first = arm.finger_links[0]
+            first_fixture = fixture_slot(fixtures, first, "adapter")
+            wrist_pose = frame["fixture_to_world"][first_fixture] @ np.linalg.inv(
+                finger_in_link(0, installation, arm)) @ np.linalg.inv(
+                np.linalg.inv(links[arm.hand_link]) @ links[first])
             obstacles = dict(static)
             for name, mesh in wrists.items():
                 mesh = mesh.copy()
@@ -109,15 +125,15 @@ def check(run, states):
             for side, name in enumerate(("left", "right")):
                 moving[(side, "finger")] = collision_object(trimesh.Trimesh(
                     frame[f"finger_nodes_{name}"], boundaries[side], process=False))
-                for component, mesh in fixture_meshes(scale, side, installation).items():
-                    parent = ("link8", "link7")[side]
-                    slot = fixtures.index(f"/World/envs/env_0/robot{active}/{parent}/SoftFixtures/{component}")
+                for component, mesh in fixture_meshes(scale, side, installation, arm).items():
+                    parent = arm.finger_links[side]
+                    slot = fixture_slot(fixtures, parent, component)
                     actual = frame["fixture_to_world"][slot]
                     maximum_post_step_translation_m = max(maximum_post_step_translation_m,
                         float(np.linalg.norm(actual[:3, 3]-mounts[side, :3, 3])))
                     maximum_post_step_rotation_error = max(maximum_post_step_rotation_error,
                         float(np.max(np.abs(actual[:3, :3]-mounts[side, :3, :3]))))
-                    mesh.apply_transform(actual @ np.linalg.inv(finger_in_link(side, installation)))
+                    mesh.apply_transform(actual @ np.linalg.inv(finger_in_link(side, installation, arm)))
                     moving[(side, component)] = collision_object(mesh)
             target = plans[int(frame["operation_index"])]["target_label"]
             for key, body in moving.items():

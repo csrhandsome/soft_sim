@@ -14,6 +14,11 @@ from soft_sim.runtime import child_environment, environment
 #: group -> (environment, test directory)
 GROUPS = {
     "unit": ("core", "tests/unit"),
+    "performance": ("core", "tests/performance"),
+    "gpu-performance": ("robodojo", "tests/integration/gpu_performance"),
+    "gpu-solver": ("robodojo", "tests/integration/gpu_solver"),
+    "gpu-follow": ("robodojo", "tests/integration/gpu_follow"),
+    "gpu-physics": ("robodojo", "tests/integration/gpu_physics"),
     "planning": ("planning", "tests/integration/planning"),
     "dataset": ("dataset", "tests/integration/dataset"),
     "meshing": ("meshing", "tests/integration/meshing"),

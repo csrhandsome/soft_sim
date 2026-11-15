@@ -11,9 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from soft_sim.execution import layout_target_parameters
-from soft_sim.robots.x5.soft_tool import (
-    FINGER_LINKS, HALF_ROOT_SPACING, INWARD_OFFSET, MOUNT_X, finger_in_link,
-)
+from soft_sim.robots.fingers import finger_in_link, fixture_meshes
 
 
 def world_geometry(stage, path, world_from_root=None):
@@ -65,8 +63,8 @@ class SceneExporter:
     """Write ``scene.json`` plus world-frame NPZ geometry for one operation."""
 
     def __init__(self, *, env, cfg, layout, layout_path, layout_hash, installation,
-                 base, arm_index, fem_report, fem_valid, finger_scale, adapter_offset_m,
-                 texture_max_resolution, task_name):
+                 base, arm_index, mechanisms, installations, fem_report, fem_valid,
+                 finger_scale, adapter_offset_m, texture_max_resolution, task_name):
         self.env = env
         self.cfg = cfg
         self.layout = layout
@@ -75,6 +73,9 @@ class SceneExporter:
         self.installation = installation
         self.base = base
         self.arm_index = arm_index
+        self.mechanisms = list(mechanisms)
+        self.installations = list(installations)
+        self.mechanism = self.mechanisms[arm_index]
         self.fem_report = fem_report
         self.fem_valid = fem_valid
         self.manager = env.scene_manager.layout_manager
@@ -100,7 +101,6 @@ class SceneExporter:
     # -- main ------------------------------------------------------------
     def export(self, destination, target_label):
         import trimesh
-        from soft_sim.robots.x5.mount_geometry import fixture_meshes
         destination = Path(destination)
         destination.mkdir(parents=True, exist_ok=True)
         env, manager = self.env, self.manager
@@ -144,12 +144,15 @@ class SceneExporter:
 
         other_index = 1 - self.arm_index
         other = env.robot_manager.robot_key[other_index]
+        other_mechanism = self.mechanisms[other_index]
+        other_installation = self.installations[other_index]
         poses = other.data.body_link_pose_w[0].cpu().numpy()
+        from soft_sim.sim.robodojo import robot_link_path
         for name, pose in zip(other.body_names, poses):
-            if name in FINGER_LINKS:
+            if name in other_mechanism.finger_links:
                 continue
             actual_pose = pose_matrix((pose[:3], pose[3:]))
-            v, f = world_geometry(env.stage, f"/World/envs/env_0/robot{other_index}/{name}", actual_pose)
+            v, f = world_geometry(env.stage, robot_link_path(env.stage, other_index, name), actual_pose)
             hull = trimesh.Trimesh(v, f, process=False).convex_hull
             obstacles.update({f"vertices_{count}": hull.vertices, f"faces_{count}": hull.faces})
             count += 1
@@ -158,8 +161,10 @@ class SceneExporter:
             obstacles.update({f"vertices_{count}": hull.vertices, f"faces_{count}": hull.faces})
             count += 1
         for side in (0, 1):
-            pose = env.tools[other_index].mounts[side] @ np.linalg.inv(finger_in_link(side, self.installation))
-            for mesh in fixture_meshes(self.finger_scale, side, self.installation).values():
+            pose = env.tools[other_index].mounts[side] @ np.linalg.inv(finger_in_link(
+                side, other_installation, other_mechanism))
+            for mesh in fixture_meshes(self.finger_scale, side, other_installation,
+                                       other_mechanism).values():
                 mesh.apply_transform(pose)
                 obstacles.update({f"vertices_{count}": mesh.vertices, f"faces_{count}": mesh.faces})
                 count += 1
@@ -176,8 +181,9 @@ class SceneExporter:
             world_from_robot_base=self.base.tolist(), hand_mount_offset_m=.075,
             adapter_offset_m=self.adapter_offset_m, finger_mesh=self.cfg.mesh.stl,
             collision_scope="task rigid and geometry objects + table; convex hulls; room excluded",
-            embodiment_variant="original dual X5 with replacement FEM fingers on native slides")
-        scene.update(robot_name="x5", active_arm=self.arm_index, finger_scale=self.finger_scale,
+            embodiment_variant=self.mechanism.embodiment)
+        scene.update(robot_name=self.mechanism.name, active_arm=self.arm_index,
+                     finger_scale=self.finger_scale,
                      finger_scale_to_m=self.cfg.mesh.scale_to_m,
                      target_geometry_sha256=hashlib.sha256(
                          (destination / "object_geometry.npz").read_bytes()).hexdigest())
@@ -189,12 +195,15 @@ class SceneExporter:
                      texture_max_resolution=self.texture_max_resolution,
                      deformable_mesh=[tool.mesh_settings for tool in env.tools],
                      mesh_topology=[tool.mesh_topology for tool in env.tools])
-        scene["collision_scope"] += "; parked second X5 links and deformed soft fingers included"
-        scene.update(hand_mount_offset_m=MOUNT_X, adapter_offset_m=HALF_ROOT_SPACING - INWARD_OFFSET,
-                     joint_names=robot.joint_names)
+        scene["collision_scope"] += f"; parked second {other_mechanism.name} links and deformed soft fingers included"
+        scene.update(hand_mount_offset_m=float(self.mechanism.tool_origin_m @ self.mechanism.growth_axis_in_hand),
+                     adapter_offset_m=self.installation["closed_half_spacing_m"],
+                     joint_names=robot.joint_names,
+                     tool_origin_in_hand_m=list(self.mechanism.tool_origin_m),
+                     tool_rotation=self.mechanism.rotation.tolist())
         scene["finger_installation"] = self.installation
-        scene["finger_in_slide_transforms"] = [finger_in_link(side, self.installation).tolist()
-                                               for side in (0, 1)]
+        scene["finger_in_slide_transforms"] = [
+            finger_in_link(side, self.installation, self.mechanism).tolist() for side in (0, 1)]
         scene["adapter_offset_m"] = self.installation["closed_half_spacing_m"]
         scene["hand_mount_offset_m"] += self.installation["forward_offset_m"]
         (destination / "scene.json").write_text(json.dumps(scene, indent=2))

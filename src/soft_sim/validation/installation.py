@@ -14,8 +14,8 @@ from mplib import Pose
 from mplib.collision_detection import fcl
 
 from soft_sim.config import ROOT
-from soft_sim.robots.x5.mount_geometry import measured_installation, tool_meshes, source_mesh
-from soft_sim.robots.x5.soft_tool import link_transforms, TOOL_ROTATION, MOUNT_X, MOUNT_Z
+from soft_sim.robots.fingers import link_transforms, measured_installation as derive, source_mesh, tool_meshes
+from soft_sim.robots.mechanism import X5, mechanism
 
 
 def collision_object(mesh):
@@ -26,25 +26,31 @@ def collision_object(mesh):
     return fcl.CollisionObject(model)
 
 
-def wrist_obstacles():
-    source = ROOT / "third_party/RoboDojo/Assets/Robots/x5"
-    robot = ET.parse(source / "X5A.urdf").getroot()
-    links = link_transforms(np.zeros(8))
+def wrist_obstacles(arm=X5):
+    """Wrist body and stock wrist camera hulls, expressed in the hand frame."""
+    robot = ET.parse(arm.urdf).getroot()
+    links = link_transforms(np.zeros(len(arm.joint_names)), mechanism=arm)
     result = {}
     for link in robot.findall("link"):
         name = link.get("name")
-        if name not in ("link6", "camera", "camera_base"):
+        if name != arm.hand_link and name not in arm.camera_links:
             continue
         visual = link.find("visual")
-        mesh = trimesh.load(source / visual.find("geometry/mesh").get("filename"), force="mesh")
-        if name != "link6":
+        if visual is None or visual.find("geometry/mesh") is None:
+            continue
+        path = arm.mesh_file(name, visual.find("geometry/mesh").get("filename"), "visual")
+        if not path.is_file():
+            # Franka's stock wrist camera is visual-only and not shipped as OBJ.
+            continue
+        mesh = trimesh.load(path, force="mesh")
+        if name != arm.hand_link:
             mesh = mesh.convex_hull  # same conservative housing as the planner
         local = np.eye(4)
         origin = visual.find("origin")
         if origin is not None:
             local[:3, 3] = np.fromstring(origin.get("xyz", "0 0 0"), sep=" ")
             local[:3, :3] = Rotation.from_euler("xyz", np.fromstring(origin.get("rpy", "0 0 0"), sep=" ")).as_matrix()
-        mesh.apply_transform(np.linalg.inv(links["link6"]) @ links[name] @ local)
+        mesh.apply_transform(np.linalg.inv(links[arm.hand_link]) @ links[name] @ local)
         result[name] = mesh
     return result
 
@@ -80,12 +86,12 @@ def surface_gaps(parts, scale):
                 opposed_normal_cosine_median=float(np.median(opposed)))
 
 
-def audit(scale, installation, obstacles, samples=45):
-    parts = [tool_meshes(scale, side, installation) for side in (0, 1)]
+def audit(scale, installation, obstacles, samples=45, arm=X5):
+    parts = [tool_meshes(scale, side, installation, mechanism=arm) for side in (0, 1)]
     wrist_from_tool = np.eye(4)
-    wrist_from_tool[:3, :3] = TOOL_ROTATION
+    wrist_from_tool[:3, :3] = arm.rotation
     forward = installation["forward_offset_m"] if installation else 0.
-    wrist_from_tool[:3, 3] = [MOUNT_X + forward, 0., MOUNT_Z]
+    wrist_from_tool[:3, 3] = np.asarray(arm.tool_origin_m) + arm.growth_axis_in_hand * forward
     objects = []
     for side in (0, 1):
         group = {}
@@ -148,22 +154,24 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True,
                         help="Report directory; normally reports/installation of a run")
+    parser.add_argument("--robot", default="x5", choices=("x5", "franka"))
     args = parser.parse_args(argv)
     args.output.mkdir(parents=True, exist_ok=True)
-    obstacles = wrist_obstacles()
+    arm = mechanism(args.robot)
+    obstacles = wrist_obstacles(arm)
     reports, drawings = [], []
     configurations = [("parallel_legacy", .75, None)]
-    configurations += [(f"tilt_{angle:g}", .75, measured_installation(.75, angle)) for angle in (0, 6, 10, 12, 14, 16)]
-    configurations += [(f"measured_scale_{scale:g}", scale, measured_installation(scale)) for scale in (.65, .75, .8)]
+    configurations += [(f"tilt_{angle:g}", .75, derive(.75, angle, mechanism=arm)) for angle in (0, 6, 10, 12, 14, 16)]
+    configurations += [(f"measured_scale_{scale:g}", scale, derive(scale, mechanism=arm)) for scale in (.65, .75, .8)]
     for label, scale, installation in configurations:
-        report, parts = audit(scale, installation, obstacles)
+        report, parts = audit(scale, installation, obstacles, arm=arm)
         report["label"] = label
         reports.append(report)
         if label in ("parallel_legacy", "tilt_6", "tilt_12", "tilt_16"):
             drawings.append((label, parts, report))
         print(label, "collision_clearance_valid", report["collision_clearance_valid"], "collisions", len(report["collisions"]),
               "surface gap p95 mm", report["working_surface"]["gap_p95_m"] * 1000, flush=True)
-    report = dict(scope=__doc__.strip(), results=reports,
+    report = dict(scope=__doc__.strip(), robot=arm.name, results=reports,
         fixture_comparison=dict(direct_angle="Identical finger pose requires a tilted seat machined into/replacing the factory slide interface; no such CAD is available.",
             wedge="Selected: separate flat-bottom/tilted-top bridge retains factory slide frames and limits.",
             manufacturing_status="Simulation envelope only; fastening, tolerances, strength and real camera packaging unverified."),
@@ -175,13 +183,13 @@ def main(argv=None):
     import matplotlib.pyplot as plt
     from matplotlib.collections import PolyCollection
     fig, axes = plt.subplots(1, len(drawings), figsize=(16, 6), sharex=True, sharey=True)
-    stock_links = link_transforms(np.zeros(8))
+    stock_links = link_transforms(np.zeros(len(arm.joint_names)), mechanism=arm)
     tool = np.eye(4)
-    tool[:3, :3], tool[:3, 3] = TOOL_ROTATION, [MOUNT_X, 0., MOUNT_Z]
+    tool[:3, :3], tool[:3, 3] = arm.rotation, arm.tool_origin_m
     stock_meshes = []
-    for name in ("link8", "link7"):
-        mesh = trimesh.load(ROOT / f"third_party/RoboDojo/Assets/Robots/x5/meshes/{name}.STL", force="mesh")
-        mesh.apply_transform(np.linalg.inv(tool) @ np.linalg.inv(stock_links["link6"]) @ stock_links[name])
+    for name in arm.finger_links:
+        mesh = trimesh.load(arm.mesh_file(name, f"meshes/{name}.STL", "visual"), force="mesh")
+        mesh.apply_transform(np.linalg.inv(tool) @ np.linalg.inv(stock_links[arm.hand_link]) @ stock_links[name])
         stock_meshes.append(mesh)
     colors = dict(finger="#f87522", adapter="#64748b", camera="#0c9baa")
     for ax, (label, parts, entry) in zip(axes, drawings):
@@ -200,7 +208,7 @@ def main(argv=None):
         ax.set_xlabel("Closing axis (mm)")
         ax.grid(alpha=.15)
     axes[0].set_ylabel("Forward from factory slide (mm)")
-    fig.suptitle("Native slides fully closed; stock (gray), soft fingers (orange), wedges (slate), camera proxies (cyan)")
+    fig.suptitle(f"{arm.name} slides fully closed; stock (gray), soft fingers (orange), wedges (slate), camera proxies (cyan)")
     fig.tight_layout()
     fig.savefig(args.output / "closed_comparison.png", dpi=180)
     fig.savefig(args.output / "closed_comparison.svg")

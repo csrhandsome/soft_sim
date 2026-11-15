@@ -19,6 +19,9 @@ class ConfigurationRules(unittest.TestCase):
         self.assertEqual(config.task.name, "general_pickup")
         self.assertEqual(config.task.finger_scale, .75)
         self.assertEqual(config.recording.fps, 20)
+        self.assertEqual(config.simulation.solver_iterations,80)
+        self.assertEqual(config.simulation.deformable_vertex_velocity_damping,20.)
+        self.assertTrue(config.mesh.eliminate_fixed_cells)
         self.assertIsInstance(CONFIG_VERSION, int)
         self.assertTrue((ROOT / "assets/meshes/soft_finger.stl").is_file())
         self.assertTrue(config.to_dict()["planning"]["contact_height_candidates_m"])
@@ -76,6 +79,10 @@ class ConfigurationRules(unittest.TestCase):
 
     def test_invalid_values_fail_before_starting_the_simulator(self):
         config = ExperimentConfig()
+        config.mesh.eliminate_fixed_cells = 'false'
+        with self.assertRaisesRegex(ValueError,'boolean'):
+            config.validate()
+        config = ExperimentConfig()
         config.task.finger_scale = 2.
         with self.assertRaises(ValueError):
             config.validate()
@@ -87,6 +94,19 @@ class ConfigurationRules(unittest.TestCase):
         config.recording.dataset_id = "a/b"
         with self.assertRaises(ValueError):
             config.validate()
+
+    def test_collect_defaults_and_explicit_full_mesh_override(self):
+        from soft_sim.cli.collect import build_parser
+        from soft_sim.tasks.collect import build_config
+        with tempfile.TemporaryDirectory() as directory:
+            mesh = Path(directory)/'full.npz'
+            mesh.touch()  # Config resolution checks existence; simulation loads it later.
+            args = build_parser().parse_args(['--fem-mesh',str(mesh)])
+            config = build_config(args)
+            self.assertEqual(config.simulation.solver_iterations,80)
+            self.assertTrue(config.mesh.eliminate_fixed_cells)
+            args = build_parser().parse_args(['--fem-mesh',str(mesh),'--no-fixed-cell-elimination'])
+            self.assertFalse(build_config(args).mesh.eliminate_fixed_cells)
 
     def test_native_x5_profile_is_not_the_legacy_panda_profile(self):
         config = ExperimentConfig()

@@ -1,0 +1,18 @@
+{
+  "task": {
+    "name": "general_pickup",
+    "seed": 22,
+    "active_arm": 1,
+    "robot": "franka",
+    "finger_scale": 0.75
+  },
+  "planning": {
+    "friction": 0.51,
+    "lift_height_m": 0.14,
+    "max_attempts": 96
+  },
+  "recording": {
+    "fps": 20,
+    "dataset_id": "panda_pickup_v1"
+  }
+}

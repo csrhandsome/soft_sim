@@ -25,7 +25,7 @@ class EpisodeRecorder:
     camera_names = CAMERA_NAMES
 
     def __init__(self, directory, fps, calibration, *, dataset_root, repo_id="local/softfinger",
-                 task="soft finger grasp", run_id=None):
+                 task="soft finger grasp", run_id=None, success_only=True):
         self.directory = Path(directory).resolve()
         if self.directory.exists():
             raise FileExistsError(self.directory)
@@ -36,6 +36,7 @@ class EpisodeRecorder:
         self.root = Path(dataset_root).resolve()
         self.repo_id, self.task, self.calibration = repo_id, task, calibration
         self.run_id = run_id
+        self.success_only = success_only
         self.rows, self.phases = [], []
         self.state_keys = None
         self.shapes = None
@@ -63,6 +64,7 @@ class EpisodeRecorder:
             calibration=self.calibration, phases=self.phases,
             frames=self.rows, run_id=self.run_id, task=self.task,
             state_keys=self.state_keys, result=result if result is not None else data.get("result"))
+        data["success_only"] = self.success_only
         path = self.directory / "episode.json"
         temporary = path.with_suffix(".json.tmp")
         temporary.write_text(json.dumps(data, indent=2))
@@ -107,6 +109,11 @@ class EpisodeRecorder:
         self.closed = True
         self.result = result
         self.stream.close()
+        if complete and self.success_only and (result or {}).get("success") is not True:
+            self._metadata("discarded", result)
+            (self.directory / "capture.partial.npy").unlink(missing_ok=True)
+            (self.directory / "finger_reference.npz").unlink(missing_ok=True)
+            return
         self._metadata("staged" if complete and self.rows else "incomplete", result)
         validate_capture_metadata(self._read_metadata())
         if complete and self.rows:

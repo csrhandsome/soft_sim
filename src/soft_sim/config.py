@@ -9,6 +9,8 @@ from pathlib import Path
 # Configuration format marker written into every resolved snapshot.
 CONFIG_VERSION = 1
 MATERIAL_PRESETS = ("bambu_tpu_75a", "bambu_tpu_85a", "bambu_tpu_90a")
+#: Mirrors robots/mechanism.py; config must stay importable without the robot layer.
+JAW_TRAVEL_BY_ROBOT = {"x5": .044, "franka": .04}
 
 # Repository root. The installed package lives at <root>/src/soft_sim/config.py;
 # SOFT_SIM_ROOT only overrides it for unusual deployments.
@@ -66,6 +68,7 @@ class MeshConfig:
     tetra_mesh: str = "assets/meshes/soft_finger_voxel2mm.npz"
     voxel_pitch_m: float = 0.002
     pin_height_m: float = 0.004
+    eliminate_fixed_cells: bool = True
 
 
 @dataclass
@@ -130,8 +133,8 @@ class SimulationConfig:
     livestream_ip: str = ""
     livestream_signal_port: int = 49100
     livestream_stream_port: int = 47998
-    solver_iterations: int = 100
-    deformable_vertex_velocity_damping: float | None = None
+    solver_iterations: int = 80
+    deformable_vertex_velocity_damping: float | None = 20.0
 
 
 @dataclass
@@ -139,6 +142,8 @@ class TaskConfig:
     """Task identity and embodiment parameters shared by every command."""
     name: str = "general_pickup"
     seed: int = 0
+    #: Finger mechanism of the active arm; the parked arm keeps its stock X5.
+    robot: str = "x5"
     active_arm: int = 1
     finger_scale: float = 0.75
     target_label: str | None = None
@@ -164,6 +169,7 @@ class RecordingConfig:
     fps: int = 20
     dataset_id: str | None = None
     repo_id: str = "local/softfinger"
+    success_only: bool = True
 
 
 @dataclass
@@ -201,6 +207,8 @@ class ExperimentConfig:
                 raise ValueError("Configuration contains NaN or infinity")
 
         finite_tree(asdict(self))
+        if not isinstance(self.mesh.eliminate_fixed_cells, bool):
+            raise ValueError('mesh.eliminate_fixed_cells must be a boolean')
         if not 0 < self.material.shore_a < 100:
             raise ValueError("Shore A must be in (0, 100)")
         if len(self.material.color_srgb) != 3 or any(not 0 <= c <= 1 for c in self.material.color_srgb):
@@ -250,9 +258,9 @@ class ExperimentConfig:
         if not 0 <= self.gripper.mount_tilt_range_deg[0] <= self.gripper.mount_tilt_range_deg[1] < 60:
             raise ValueError("Mount tilt must be in [0,60) degrees")
         interval("final jaw width", self.gripper.final_jaw_width_range_m)
-        if self.gripper.profile not in ('robotiq_2f85', 'panda', 'angular', 'native_x5'):
-            raise ValueError("Profile must be robotiq_2f85, panda, angular or native_x5")
-        max_width = {'panda': .080, 'native_x5': .088}.get(self.gripper.profile, .085)
+        if self.gripper.profile not in ('robotiq_2f85', 'panda', 'angular', 'native_x5', 'native_franka'):
+            raise ValueError("Profile must be robotiq_2f85, panda, angular, native_x5 or native_franka")
+        max_width = {'panda': .080, 'native_x5': .088, 'native_franka': .080}.get(self.gripper.profile, .085)
         if not 0 <= self.gripper.final_jaw_width_range_m[0] <= self.gripper.final_jaw_width_range_m[1] <= self.gripper.open_jaw_width_m <= max_width:
             raise ValueError(f"Require 0 <= final jaw width <= open jaw width <= {max_width} m")
         if self.gripper.adapter_offset_m < 0:
@@ -274,6 +282,14 @@ class ExperimentConfig:
             raise ValueError("Joint control must be position or kinematic")
         if self.task.active_arm not in (0, 1):
             raise ValueError("Active arm must be 0 or 1")
+        if self.task.robot not in JAW_TRAVEL_BY_ROBOT:
+            raise ValueError(f"Active arm robot must be one of {', '.join(JAW_TRAVEL_BY_ROBOT)}")
+        # The replaced mechanism's slide travel caps the usable jaw width. This
+        # binds once the native profile is selected, because collect derives the
+        # profile and the jaw from the mechanism it is about to mount.
+        if self.gripper.profile == f"native_{self.task.robot}" and (
+                self.gripper.open_jaw_width_m > 2 * JAW_TRAVEL_BY_ROBOT[self.task.robot]):
+            raise ValueError("Open jaw width exceeds the active robot's slide travel")
         if not math.isfinite(self.task.finger_scale) or not .25 <= self.task.finger_scale <= 1.:
             raise ValueError("Finger scale must be in [0.25, 1]")
         if not isinstance(self.task.seed, int) or self.task.seed < 0:
@@ -298,6 +314,8 @@ class ExperimentConfig:
             raise ValueError("Planning attempts must be a positive integer")
         if not isinstance(self.recording.fps, int) or self.recording.fps <= 0:
             raise ValueError("Recording FPS must be a positive integer")
+        if not isinstance(self.recording.success_only, bool):
+            raise ValueError("recording.success_only must be a boolean")
         stride = 1 / (self.recording.fps * self.simulation.timestep_s)
         if not math.isclose(round(stride) * self.simulation.timestep_s, 1 / self.recording.fps, rel_tol=0, abs_tol=1e-9) \
                 or round(stride) < 1:

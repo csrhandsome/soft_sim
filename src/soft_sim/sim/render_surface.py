@@ -2,6 +2,7 @@
 import numpy as np
 from soft_sim.mesh import load_stl, refine_surface
 from soft_sim.config import resolve_asset
+from soft_sim.fem_reduction import bind_fixed_surface
 
 
 def create_tpu_material(stage, path, config):
@@ -25,10 +26,12 @@ def create_tpu_material(stage, path, config):
     return material
 
 
-def bind_surface(mesh, config, *, max_edge_m=0.):
+def bind_surface(mesh, config, *, max_edge_m=0., fixed_support_tet=None):
     vertices, faces=load_stl(resolve_asset(config.stl),config.scale_to_m)
     vertices, faces = refine_surface(vertices, faces, max_edge_m)
     indices, weights = bind_points(mesh, vertices)
+    if fixed_support_tet is not None:
+        indices, weights = bind_fixed_surface(mesh, config, vertices, indices, weights, fixed_support_tet)
     return vertices, faces, indices, weights
 
 

@@ -75,8 +75,10 @@ def plan_scene(scene_dir, out, *, contact_height=None, friction=.7, indent=.003,
         with np.load(place_on) as support:
             placement_delta = support_placement_translation(contact_mesh.vertices, support["vertices"], release_gap)
     center=object_mesh.bounds.mean(axis=0)
-    if scene.get("robot_name") != "x5":
-        raise SystemExit("Only the dual-X5 scene is supported; export it with robodojo_task_soft.py")
+    from soft_sim.robots.mechanism import mechanism
+    arm = mechanism(scene.get("robot_name"))
+    if arm.missing_assets():
+        raise SystemExit(f"Missing {arm.name} assets: {', '.join(arm.missing_assets())}")
     installation = scene.get("finger_installation")
     if installation is None:
         raise SystemExit("Scene has no measured finger installation; re-export it on the measured mounts")
@@ -85,16 +87,25 @@ def plan_scene(scene_dir, out, *, contact_height=None, friction=.7, indent=.003,
     height=contact_height if contact_height is not None else .055*scale
     radius=section_radius(vertices,faces,height)
     mount,offset=scene["hand_mount_offset_m"],scene["adapter_offset_m"]
-    from soft_sim.robots.x5.mount_geometry import contact_geometry, tool_meshes
-    radius, offset, rest_gap = contact_geometry(scale, installation, height)
-    mounted_vertices = [[mesh.vertices.copy() for mesh in tool_meshes(scale, side, installation).values()]
+    from soft_sim.robots.fingers import contact_geometry, tool_meshes
+    radius, offset, rest_gap = contact_geometry(scale, installation, height, arm)
+    mounted_vertices = [[mesh.vertices.copy() for mesh in tool_meshes(scale, side, installation, mechanism=arm).values()]
                         for side in (0, 1)]
     table_z=scene["table_z"]
     out.mkdir(parents=True,exist_ok=True)
-    hand_mesh=trimesh.load(ROOT/"third_party/RoboDojo/Assets/Robots/x5/meshes/link6.STL",force="mesh")
+    hand_mesh=trimesh.load(arm.hand_mesh,force="mesh")
     hand_vertices=np.asarray(hand_mesh.vertices)
-    from soft_sim.robots.x5.soft_tool import TOOL_ROTATION, MOUNT_Z, make_x5_urdf, JOINT_NAMES
-    tool_in_hand=TOOL_ROTATION
+    from soft_sim.robots.fingers import make_planning_urdf, scene_joint_vector
+    tool_in_hand=arm.rotation
+    if "tool_origin_in_hand_m" in scene:
+        tcp_origin_m=np.asarray(scene["tool_origin_in_hand_m"],dtype=float)
+        tool_forward_m=float(installation.get("forward_offset_m",0.))
+    else:
+        # Scenes exported before the mechanism generalisation stored only the
+        # growth component of the TCP reference, on the X5 axis.
+        tcp_origin_m=np.array([0.,0.,arm.tool_origin_m[2]])
+        tool_forward_m=float(mount)-float(tcp_origin_m@arm.growth_axis_in_hand)
+    hand_to_tcp_m=float(tcp_origin_m@arm.growth_axis_in_hand)+tool_forward_m+height
     candidates=[]
     contact_cache={}
     for yaw in np.arange(0,360,45):
@@ -118,10 +129,10 @@ def plan_scene(scene_dir, out, *, contact_height=None, friction=.7, indent=.003,
                         continue
                     minimum_separation = 2 * offset
                     tcp,width,closed=centered_closure(contacts,c,radius,offset,indent,minimum_separation)
-                    opened=.088
+                    opened=arm.max_open_width_m
                     if (width+2*radius-closed-2*offset)/2 < .00075 or not 0 < closed < opened:
                         continue
-                    hand_pos=tcp-hand_r@np.array([mount+height,0.,MOUNT_Z])
+                    hand_pos=tcp-hand_r@(tcp_origin_m+arm.growth_axis_in_hand*(tool_forward_m+height))
                     minimum=float((hand_vertices@hand_r.T+hand_pos)[:,2].min())
                     for jaw in (opened, closed):
                         for side in (0, 1):
@@ -140,10 +151,10 @@ def plan_scene(scene_dir, out, *, contact_height=None, friction=.7, indent=.003,
     print("GEOMETRIC_CANDIDATES",len(candidates),"contact_radius_m",radius,flush=True)
     if not candidates:
         raise RuntimeError("No table-clear antipodal candidates for the current geometry")
-    urdf=make_x5_urdf(out,height,scale,installation)
-    joint_names=JOINT_NAMES
-    n_arm=len(joint_names)-2
-    planner=mplib.Planner(urdf=urdf,srdf=out/"soft_x5.srdf",move_group="soft_grasp_tcp",
+    urdf=make_planning_urdf(out,height,scale,installation,arm)
+    joint_names=list(arm.joint_names)
+    n_arm=len(arm.arm_joints)
+    planner=mplib.Planner(urdf=urdf,srdf=out/f"soft_{arm.name}.srdf",move_group="soft_grasp_tcp",
         user_joint_names=joint_names,joint_vel_limits=np.full(n_arm,.45),joint_acc_limits=np.full(n_arm,.7))
     # Keep robot, table, target, and attached payload in one BASE frame.
     # Convert every world target explicitly. This avoids attached-body pose
@@ -171,8 +182,8 @@ def plan_scene(scene_dir, out, *, contact_height=None, friction=.7, indent=.003,
                 hull=trimesh.Trimesh(vertices_base,obstacles[f"faces_{index}"],process=False).convex_hull
                 planner.planning_world.add_object(f"obstacle_{index}",fcl.CollisionObject(bvh(hull.vertices,hull.faces)))
     acm=planner.planning_world.get_allowed_collision_matrix()
-    acm.set_entry("base_link","table",True)
-    for side,parent in (("left","link8"),("right","link7")):
+    acm.set_entry(arm.base_link,"table",True)
+    for side,parent in (("left",arm.finger_links[0]),("right",arm.finger_links[1])):
         for component in ("soft_"+side,"soft_"+side+"_adapter","soft_"+side+"_camera"):
             acm.set_entry(component,[parent,"soft_"+side,
                 "soft_"+side+"_adapter","soft_"+side+"_camera"],True)
@@ -194,7 +205,7 @@ def plan_scene(scene_dir, out, *, contact_height=None, friction=.7, indent=.003,
         return dict(status="Success",position=positions,time=times,duration=duration)
     attempts=[]
     for index,candidate in enumerate(candidates[:max_attempts]):
-        q=np.array(scene["initial_q"])
+        q=scene_joint_vector(scene,arm)
         q[-2:]=candidate["opened"]/2
         tcp=np.array(candidate["tcp"])
         r=np.array(candidate["rotation"])
@@ -317,7 +328,7 @@ def plan_scene(scene_dir, out, *, contact_height=None, friction=.7, indent=.003,
         np.savez_compressed(out/"joints.npz",**trajectories)
         report=dict(status="planned",candidate=candidate,world_from_robot_base_translation_m=base_translation.tolist(),
             world_from_robot_base=world_from_base.tolist(),lift_height_m=lift_height,contact_height_m=height,
-            finger_inner_radius_m=radius,hand_to_tcp_m=mount+height,initial_q=q.tolist(),
+            finger_inner_radius_m=radius,hand_to_tcp_m=hand_to_tcp_m,initial_q=q.tolist(),
             scene=scene,trajectory_file="joints.npz",sample_dt_s=sample_dt,
             planner="mplib RRT pregrasp/lift + collision-checked Cartesian approach/probe; full shared STL + adapter/camera proxies + carried object",
             collision_checked=True,physical_grasp_validated=False,friction_coefficient=friction,probe_lift_m=.012,lift_goal_rotation=lift_rotation.tolist(),attempts=attempts)

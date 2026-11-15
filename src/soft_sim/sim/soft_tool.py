@@ -4,18 +4,29 @@ The host owns the app, physics scene and clock. Create before reset(), initializ
 once physics is live, follow measured mount frames before every physics step.
 Only base nodes are driven; free-node deformation is solved by PhysX.
 """
+from contextlib import nullcontext
+
 import numpy as np
 from soft_sim.config import resolve_asset
 from soft_sim.geometry import mounted_camera_pose, transform_points
+from soft_sim.fem_reduction import base_pin_mask, prepare_fem_meshes
 from soft_sim.mesh import TetMesh, load_stl
 from soft_sim.robots.mounts import validate_mount_poses
 from soft_sim.sim.cameras import configure_pinhole_camera
 
 
-def base_pin_mask(local_nodes, height_m, pitch_m):
-    """Keep the intended support layer despite sub-cell cooking quantization."""
-    tolerance = .01 * pitch_m
-    return local_nodes[:, 2] <= local_nodes[:, 2].min() + height_m + tolerance, tolerance
+def capture_mounted_tools(tools, active_index, world):
+    """Share one FEM snapshot between display embedding and frame recording.
+
+    The active tool still reads back after rendering to reject a capture that
+    advanced physics. All cameras are rendered by its single Replicator step.
+    """
+    nodes = [tool.positions() for tool in tools]
+    for index, tool in enumerate(tools):
+        if index != active_index:
+            tool.sync_render_surface(nodes[index])
+    rgb, depth = tools[active_index].capture(world, positions=nodes[active_index])
+    return rgb, depth, nodes
 
 
 class MountedSoftTool:
@@ -28,12 +39,19 @@ class MountedSoftTool:
         from pxr import Gf, Sdf, UsdGeom, Vt, PhysxSchema, UsdShade
         from soft_sim.sim.render_surface import create_tpu_material
         self.stage, self.config, self.root = stage, config.validate(), root
+        self.sleep_threshold = sleep_threshold
         self.explicit_fem_mesh = explicit_fem_mesh
         self.rest_authoring_scale = float(rest_authoring_scale) if explicit_fem_mesh else 1.
         if not np.isfinite(self.rest_authoring_scale) or self.rest_authoring_scale <= 0:
             raise ValueError("Rest authoring scale must be finite and positive")
         self.mounts = validate_mount_poses(mounts)
         self.mesh = TetMesh.load(config.mesh)
+        self.collision_mesh = self.mesh
+        self.fixed_support_tet = None
+        if explicit_fem_mesh:
+            meshes = prepare_fem_meshes(self.mesh, config.mesh)
+            self.mesh, self.collision_mesh = meshes.simulation, meshes.collision
+            self.fixed_support_tet = meshes.fixed_support_tet
         self.pin = self.mesh.vertices[:, 2] <= self.mesh.vertices[:, 2].min() + config.mesh.pin_height_m + 1e-8
         # Let 5.1 cook its legacy simulation/collision topology from the same
         # shared STL. A 6.2 TetMesh is not a portable legacy soft-body asset.
@@ -50,6 +68,13 @@ class MountedSoftTool:
                                   pin_height_m=config.mesh.pin_height_m, self_collision=self_collision,
                                   explicit_initialization='authored rest positions and zero velocity before pinning'
                                   if explicit_fem_mesh else None)
+        if explicit_fem_mesh:
+            self.mesh_settings.update(collision_nodes=len(self.collision_mesh.vertices),
+                collision_tets=len(self.collision_mesh.tets),
+                fixed_cell_elimination=dict(enabled=self.fixed_support_tet is not None,
+                    original_fem_tets=len(self.collision_mesh.tets),retained_fem_tets=len(self.mesh.tets),
+                    removed_fully_fixed_tets=len(self.collision_mesh.tets)-len(self.mesh.tets),
+                    support_tet=self.fixed_support_tet))
         self.initial, self.paths, self.views, self.camera_ops = [], [], [], []
         self.products, self.annotators = [], []
         self.camera_projection = []
@@ -81,19 +106,23 @@ class MountedSoftTool:
             mesh.CreateDisplayColorAttr([Gf.Vec3f(*config.material.color_linear)])
             explicit = {}
             if explicit_fem_mesh:
-                # Use the same conforming volume mesh for mechanics and
-                # collision, following SOFA's deformable modelling examples.
+                # Mechanics can skip fully fixed cells. Collision always keeps
+                # every original vertex and tetrahedron with automatic mapping.
                 tetra_points = [Gf.Vec3f(*point) for point in (self.mesh.vertices*self.rest_authoring_scale).tolist()]
                 tetra_indices = self.mesh.tets.astype(np.int32).ravel().tolist()
+                collision_points = [Gf.Vec3f(*point) for point in (self.collision_mesh.vertices*self.rest_authoring_scale).tolist()]
+                collision_indices = self.collision_mesh.tets.astype(np.int32).ravel().tolist()
                 explicit = dict(simulation_rest_points=tetra_points, simulation_indices=tetra_indices,
-                                collision_rest_points=tetra_points, collision_indices=tetra_indices)
-            if not deformableUtils.add_physx_deformable_body(stage, path,
+                                collision_rest_points=collision_points, collision_indices=collision_indices)
+            with Sdf.ChangeBlock() if self.fixed_support_tet is not None else nullcontext():
+                added = deformableUtils.add_physx_deformable_body(stage, path,
                     simulation_hexahedral_resolution=simulation_resolution,
                     collision_simplification=False,
                     solver_position_iteration_count=config.simulation.solver_iterations,
                     vertex_velocity_damping=config.simulation.deformable_vertex_velocity_damping,
                     self_collision=self_collision, sleep_threshold=sleep_threshold,
-                    settling_threshold=settling_threshold, sleep_damping=sleep_damping, **explicit):
+                    settling_threshold=settling_threshold, sleep_damping=sleep_damping, **explicit)
+            if not added:
                 raise RuntimeError("Could not create legacy PhysX deformable " + path)
             if max_depenetration_velocity is not None:
                 PhysxSchema.PhysxDeformableAPI(mesh.GetPrim()).CreateMaxDepenetrationVelocityAttr(max_depenetration_velocity)
@@ -145,7 +174,7 @@ class MountedSoftTool:
         self.views = [self.tensor_sim.create_soft_body_view(path) for path in self.paths]
         self.indices, self.targets, self.local_nodes, self.pin_masks = [], [], [], []
         self._last_target_points = [None, None]
-        self.sim_tets, self.mesh_topology = [], []
+        self.sim_tets, self.rest_volumes, self.mesh_topology = [], [], []
         for side, view in enumerate(self.views):
             actual = view.get_sim_nodal_positions()
             if self.explicit_fem_mesh:
@@ -185,6 +214,7 @@ class MountedSoftTool:
             unanchored = ~np.isin(labels, np.unique(labels[pin]))
             from soft_sim.mesh import tet_volumes
             element_volumes = tet_volumes(local, tets)
+            self.rest_volumes.append(element_volumes)
             zero_free_rest_elements = 0
             if self.explicit_fem_mesh:
                 inverse_rest = view.get_sim_element_rest_poses().cpu().numpy().reshape(-1, 3, 3)
@@ -222,7 +252,8 @@ class MountedSoftTool:
             for side, path in enumerate(self.paths):
                 cooked = SimpleNamespace(vertices=self.local_nodes[side], tets=self.sim_tets[side])
                 surface, faces, indices, weights = bind_surface(
-                    cooked, self.config.mesh, max_edge_m=self.surface_max_edge_m)
+                    cooked, self.config.mesh, max_edge_m=self.surface_max_edge_m,
+                    fixed_support_tet=self.fixed_support_tet)
                 UsdGeom.Imageable(self.stage.GetPrimAtPath(path)).CreatePurposeAttr('guide')
                 visual = UsdGeom.Mesh.Define(self.stage, path + '_Surface')
                 visual.CreateFaceVertexCountsAttr([3] * len(faces))
@@ -237,12 +268,14 @@ class MountedSoftTool:
             print('SOFT_TOOL_SURFACE', self.mesh_settings, flush=True)
             self.sync_render_surface()
 
-    def sync_render_surface(self):
+    def sync_render_surface(self, positions=None):
         """Update display vertices from the current FEM state; never step physics."""
         if not self.render_meshes:
             return
         from pxr import Vt
-        for visual, (indices, weights), points in zip(self.render_meshes, self.surface_bindings, self.positions()):
+        if positions is None:
+            positions = self.positions()
+        for visual, (indices, weights), points in zip(self.render_meshes, self.surface_bindings, positions):
             surface = np.einsum('ni,nij->nj', weights, points[indices]).astype(np.float32)
             visual.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(surface))
 
@@ -266,9 +299,20 @@ class MountedSoftTool:
             self.fixtures.reset_to_mounts(mounts)
         self.follow(mounts)
 
-    def follow(self, mounts):
+    @property
+    def mounts(self):
+        """Latest pre-step measured mounts; GPU following downloads only on use."""
+        if getattr(self, "_mounts", None) is None:
+            self._mounts = validate_mount_poses(self._mounts_gpu.cpu().numpy())
+        return self._mounts
+
+    @mounts.setter
+    def mounts(self, value):
+        self._mounts = value
+        self._mounts_gpu = None
+
+    def follow(self, mounts, *, update_cameras=True):
         import torch
-        from pxr import Gf
         self.mounts = validate_mount_poses(mounts)
         if hasattr(self, "fixtures"):
             self.fixtures.follow(self.mounts)
@@ -283,6 +327,18 @@ class MountedSoftTool:
             targets[..., :3] = torch.as_tensor(points, dtype=targets.dtype, device=targets.device)
             view.set_sim_kinematic_targets(targets, indices)
             self._last_target_points[side] = points
+        if update_cameras:
+            self.sync_cameras()
+
+    def sync_cameras(self):
+        """Author the current measured camera poses before rendering.
+
+        Physics-only collection steps can defer these USD writes to capture;
+        camera_poses always reports the current mounts, even before this flush.
+        """
+        if not self.camera_ops:
+            return
+        from pxr import Gf
         for op, pose in zip(self.camera_ops, self.camera_poses):
             usd_pose = pose.copy()
             usd_pose[:3, :3] = usd_pose[:3, :3] @ np.diag([1., -1., -1.])
@@ -298,12 +354,13 @@ class MountedSoftTool:
     def collision_positions(self):
         return [view.get_nodal_positions().cpu().numpy()[0].copy() for view in self.views]
 
-    def capture(self, world):
+    def capture(self, world, *, positions=None):
         import omni.replicator.core as rep
-        before = self.positions()
-        self.sync_render_surface()
+        before = self.positions() if positions is None else positions
+        self.sync_render_surface(before)
+        self.sync_cameras()
         # Physics-only steps do not flush PhysX/Fabric to the renderer. The
-        # cameras are authored in USD by follow(), so without this refresh they
+        # cameras use current USD poses, so without this refresh they
         # can see the previous render's finger geometry from the current pose.
         # World.render() flushes Fabric without advancing physics; a zero-time
         # Replicator step alone does not perform that flush in Isaac Sim 5.1.

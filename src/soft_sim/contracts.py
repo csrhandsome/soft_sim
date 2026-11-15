@@ -19,7 +19,7 @@ DATASET_SIGNATURE_KEYS = (
     "finger_resolution", "external_resolution", "finger_intrinsics",
 )
 
-CAPTURE_STATES = ("none", "capturing", "incomplete", "staged", "converting", "committed", "failed")
+CAPTURE_STATES = ("none", "capturing", "incomplete", "staged", "converting", "committed", "failed", "discarded")
 EXECUTION_STATES = ("created", "running", "completed", "failed")
 VALIDATION_STATES = ("pending", "passed", "failed")
 

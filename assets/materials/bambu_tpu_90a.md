@@ -35,5 +35,5 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OMNI_KIT_ACCEPT_EULA=
 python scripts/run.py collect --config configs/general_pickup.json --seed 22 \
   --dataset-id x5_pickup90a_watermelon_v1 --solver-iterations 80 \
   --vertex-velocity-damping 20 --texture-max-resolution 512
-python scripts/run.py preview --run-id <run_id> --video tpu90a_watermelon_red.mp4
+python scripts/run.py preview --run-id <run_id> --video data/generated/videos/tpu90a_watermelon_red.mp4
 ```

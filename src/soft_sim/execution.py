@@ -54,6 +54,39 @@ def trajectory_command(trajectory, duration, elapsed, previous_width, width):
     return np.r_[arm, jaw/2, jaw/2], np.r_[velocity, jaw_velocity/2, jaw_velocity/2], float(jaw)
 
 
+def phase_commands(trajectory, steps, timestep_s, previous_width, width):
+    """Prepare a phase once, using the same sampling epochs as trajectory_command.
+
+    The host can transfer these small arrays to the robot device once per phase
+    instead of validating the entire path and allocating two tensors at 1 kHz.
+    """
+    trajectory = np.asarray(trajectory, dtype=float)
+    if trajectory.ndim != 2 or not len(trajectory) or not np.isfinite(trajectory).all():
+        raise ValueError("Expected a finite, nonempty joint trajectory")
+    if not isinstance(steps, (int, np.integer)) or steps < 1:
+        raise ValueError("Phase steps must be a positive integer")
+    if not np.isfinite(timestep_s) or timestep_s <= 0:
+        raise ValueError("Phase timestep must be positive")
+    duration = steps * timestep_s
+    u = np.clip((np.arange(steps) + 1) * timestep_s / duration, 0., 1.)
+    positions = np.empty((steps, trajectory.shape[1] + 2))
+    velocities = np.empty_like(positions)
+    if len(trajectory) == 1:
+        positions[:, :-2] = trajectory[0]
+        velocities[:, :-2] = 0.
+    else:
+        location = u * (len(trajectory) - 1)
+        lower = np.minimum(location.astype(np.int64), len(trajectory) - 2)
+        fraction = (location - lower)[:, None]
+        positions[:, :-2] = (1 - fraction) * trajectory[lower] + fraction * trajectory[lower + 1]
+        velocities[:, :-2] = (trajectory[lower + 1] - trajectory[lower]) * (len(trajectory) - 1) / duration
+    jaw = previous_width + u*u*(3 - 2*u)*(width - previous_width)
+    jaw_velocity = 6*u*(1 - u)*(width - previous_width) / duration
+    positions[:, -2:] = jaw[:, None] / 2
+    velocities[:, -2:] = jaw_velocity[:, None] / 2
+    return positions, velocities, jaw
+
+
 def settled_phase_pairs(rows, phase, settle_s=.25):
     """Only compare adjacent captures inside each occurrence of a hold phase."""
     pairs, start = [], None
