@@ -1,4 +1,75 @@
-# 换装软指后的 RoboDojo 运动规划采集目标
+# 换装软指后的运动规划采集目标（2026-11-16 凌晨转向 `dev-robotwin`）
+
+> [!IMPORTANT]
+> **2026-11-16 凌晨战略转向记录（`dev-robotwin` 分支）**：
+> 经过对 RoboDojo 全量 54 个任务的实测排查，确认 RoboDojo 官方仓库仅提供 `eval-only` 评测环境（刻意未开源专家轨迹生成脚本以防刷榜，且部分复杂任务原版数据源自 VR 遥操作），导致在 RoboDojo 上从零手写启发式几何候选与单臂状态机面临极高的规则维护成本（20 项规划失败、23 项因缺乏特权功能点与动作基元导致物理执行失败）。
+>
+> 与 RoboDojo 同源（同一核心团队、共享 ARX-X5 双臂本体规范）的 **RoboTwin 2.0 (`RoboTwin-Platform/RoboTwin`)** 完全开源了底层双臂避障规划器（`envs/robot/planner.py`，含调好的 cuRobo / MPLib 配置与碰撞球）以及 **50 个任务自带的 `play_once()` 专家数据生成脚本**（直接读取特权功能点 Affordance Pose 并调用双臂原子动作原语）。因此，自 2026-11-16 凌晨起，在 `dev-robotwin` 分支启动 **RoboTwin 软指移植与自动化采集计划**。
+
+---
+
+## `dev-robotwin` 核心实施计划（2026-11-16 凌晨制定）
+
+### 阶段 1：`third_party/RoboTwin` 源码接入与本机 + 4090 双机 `envs/robotwin` 环境配齐
+
+1. **源码克隆与版本固化（`third_party/RoboTwin`）**
+   - 将官方仓库 `https://github.com/RoboTwin-Platform/RoboTwin.git` 克隆至 `third_party/RoboTwin`，并在根 `pyproject.toml` 的 `[tool.soft-sim.source-repositories.robotwin]` 中固化 commit 版本。
+   - 保持与现有 `third_party/` 一致的管理规范：剥离无关嵌套子模块（如 `XPolicyLab`），复用仓库根 `.deps/curobo` 等底层依赖，确保源码树干净、可跨机同步。
+2. **`envs/robotwin/` 独立虚拟环境构建**
+   - 在 `envs/robotwin/` 下新建独立的 `pyproject.toml` 与 `uv.lock`，对齐 RoboTwin 2.0 所需的 SAPIEN（`sapien==3.0.0b1`）、`mplib`、`nvidia-curobo`、`transforms3d`、`h5py`、`zarr`、`toppra` 等依赖。
+   - 复用或软链已编译的 cuRobo 扩展，避免重复耗时的 CUDA 算子编译。
+3. **本机（8GB GPU）与远端 4090（24GB GPU）双机同步配置与冒烟测试**
+   - 在本机与 `ssh 4090`（`/home/sustechdl/code/threecheng/soft_sim`）两端同步建立 `envs/robotwin/.venv`。
+   - 下载/关联 RoboTwin 的 ARX-X5 本体资产（`assets/embodiments/arx-x5`）及基础任务资产。
+   - 编写并跑通双机冒烟测试（SAPIEN 场景初始化 + ARX-X5 双臂加载 + `planner.py` 的 cuRobo/MPLib 轨迹求解 + 多视角相机渲染输出验证）。
+
+### 阶段 2：将 `measured_wedge_v3` 软指夹爪完整移植到 RoboTwin 的 ARX-X5 本体上
+
+参考此前在 RoboDojo 上完成的 `measured_wedge_v3` 严密标定流程（见 [倾斜安装验证](x5-tilted-installation-2026-11-14.md)），把软指构形、安装姿态、闭合开度与规划偏置完整迁移到 RoboTwin 的 ARX-X5 夹爪上。
+
+#### RoboTwin 2.0 与 RoboDojo 的 ARX-X5 本体对齐基准
+
+两者核心机械臂本体均为 **ARX-X5 双臂（14-DoF：每臂 6-DoF 旋转关节 `joint1..joint6` + 平移滑块 `joint7/joint8`）**，且本项目 [`src/soft_sim/robots/fingers.py`](../src/soft_sim/robots/fingers.py) 中的 `make_planning_urdf()` 已经是纯 URDF/SRDF 生成器，具备极高复用度：
+
+| 对比维度 | RoboTwin 2.0 | RoboDojo | 软指迁移与跨平台对齐策略 |
+| --- | --- | --- | --- |
+| **仿真默认机械臂** | ARX-X5 双臂（支持多本体切换） | 统一为 ARX-X5 双臂（42 个基础任务） | 锁定 `arx-x5` 本体，直接复用 `FingerMechanism(X5)` 运动学表 |
+| **基座安装间距（Extrinsics）** | 桌面双臂布局（约 `0.5m ~ 0.6m`，由 embodiment 配置决定） | 严格固定为 `0.6m`（左臂 `x=-0.3m`，右臂 `x=+0.3m`） | 在 `planner.py` 中显式传入实测左右臂世界系 `base_pose`，避免双臂自碰检测与目标位姿转换偏移 |
+| **仿真资产格式** | SAPIEN 适配的 URDF + 碰撞几何体 | Isaac Sim 适配的 USD 资产 | SAPIEN 可直接加载基于 `make_planning_urdf` 思想生成的 `soft_x5.urdf`（含软指、楔块与相机外壳碰撞体） |
+| **末端 TCP 定义** | URDF 末端 Link / 指尖 TCP 偏置 | `link6` 到指尖约 `145 mm`（滑块根部 `86.57 mm`） | 统一标定 `link6 -> soft_grasp_tcp` 局部坐标朝向与前伸长度（0.75 倍软指完整装配从滑块前伸 `70.203 mm`） |
+| **控制器增益与插值步长** | SAPIEN 关节 PD（Stiffness / Damping）与步长 | Isaac Sim PhysX 位置驱动与 `1 ms` 步长 | 匹配轨迹插值频率（Control Frequency）与关节驱动刚度/阻尼，防止跟踪滞后或接触抖动 |
+
+#### 具体移植四步走
+
+1. **机械安装构形与视觉/碰撞体替换**
+   - **保留原臂与原滑块驱动**：保留 RoboTwin 中 ARX-X5 的 6 轴机械臂、手腕（`link6`）及左右平移滑块（`link7/link8`，行程 `[0, 0.044] m`）的关节限位与控制器参数。
+   - **移植 `measured_wedge_v3` 安装链**：采用 **0.75 倍软指、双侧向内对称倾斜 12°（`12.00000014°`）、前移偏置 `5.11868 mm`、独立楔形连接件（Wedge）** 的实测装配方案，替换原装硬爪指体网格与碰撞体。
+   - **指内相机与外壳包络挂载**：在左右软指内部安装跟随滑块刚体运动的指内相机（光学中心、视场角与 9 mm 通光开口保持一致），并挂载 `12×12×8 mm`（按 0.75 倍缩放）相机保护壳与楔块碰撞体。
+2. **TCP 坐标系偏置（Frame Bias）与功能点抓取对齐**
+   - **核心问题**：RoboTwin 的 `play_once()` 专家脚本直接根据物体功能点（Functional Affordance Pose）计算目标抓放位姿，默认对应原厂硬爪的 TCP。
+   - **偏置重标定**：在 RoboTwin 的 ARX-X5 配置（`config.yml` / URDF `ee_link` 到 `soft_grasp_tcp`）中，将末端控制点精确对齐到 0.75 倍软指在 `contact_height`（默认 `55 mm × 0.75 = 41.25 mm`）处的双指接触中心，消除“软指比原爪短/厚或安装前移导致的抓空与撞桌”。
+   - **规划碰撞模型更新**：更新 RoboTwin `arx-x5` 的 `curobo.yml` 碰撞球（Collision Spheres）与 `mplib` SRDF 自碰撞忽略表（ACM），将 0.75 倍软指、楔块与指内相机外壳纳入避障包络，确保 `planner.py` 算出的双臂轨迹不发生腕部自碰或桌面穿插。
+3. **开合角度/行程映射与闭合力学考量**
+   - **零位间隙与防初穿插**：在滑块最闭合位（`q = 0`）保持左右外侧抓取斜面平行相对、中间平面保留 `0.20 mm` 初始间隙（根部半间距 `15.70782 mm`），不靠初始穿模贴合。
+   - **开合指令重映射（Gripper Scale & Closure）**：
+     - RoboTwin 的原子动作（`open_gripper` / `close_gripper`）通常使用归一化开度或固定目标值；需将其映射为软指的物理开度：
+     - **张开宽度（`opened`）**：默认使用原滑块最大开度（`88 mm`），但在狭窄容器/插孔松爪（`release`）时限制为有界张开宽度（`release_width`），防止张爪撞飞邻近物体或卡死在孔壁。
+     - **闭合宽度（`closed`）与预压量（`indent`）**：结合目标物体的抓取截面宽度 `width`、软指接触截面半径 `radius`、连接件偏置 `offset` 与有效预压量 `indent`（针对 TPU 90A 顺应性形变设定合理过盈/力控目标），确保抓持过程中产生足够的法向正压力与摩擦力，避免试抬或转移时滑脱。
+4. **仿真执行与软指 FEM / 指内视觉耦合路径**
+   - **路径 A（SAPIEN 原生高速筛选 + Isaac Sim FEM 精采）**：利用 RoboTwin SAPIEN 环境 + 改装软指后的 `play_once()` 与 `planner.py` 快速生成无碰撞双臂专家轨迹与动作序列，再驱动 TPU 90A FEM 软指与指内光线追踪相机同步执行并录制；
+   - **路径 B（SAPIEN 内直接集成软指接触代理与指内相机渲染）**：在 `envs/robotwin` 中直接挂载指内双目相机与合规碰撞代理跑通 `play_once()` 闭环。
+   - 两阶段均先以单任务抓取和 `stack_blocks` / `insert_tubes` 等代表性任务做闭合间隙、抓取随动与指内相机画面验证。
+
+### 阶段 3：接入 RoboTwin `play_once()` 专家流水线与 LeRobot v3 数据集交付
+
+1. **复用 `play_once()` 双臂专家状态机**：直接调用 RoboTwin 各任务现成的特权位姿读取、双臂分配、双臂交接与原子动作编排，替代此前在 RoboDojo 中手写的单臂启发式适配器。
+2. **统一数据落盘格式**：将采集到的双指内相机 RGB、外部相机 RGB、16 自由度双臂关节状态/动作指令及软指形变状态，统一按项目现有的 LeRobot v3 规范写入 `data/datasets/<task_name>/`，并通过 `validate-dataset` 完整性校验。
+
+---
+
+## 历史记录：RoboDojo 换装软指运动规划采集目标（2026-11-15 及以前）
+
+以下保留 `master` 分支在 RoboDojo 上的目标定义、阶段验证与排查记录作为对照参考。
 
 当前目标是使用 **motion planning（运动规划）**，让换装新软指的机器人执行 RoboDojo 任务并收集仿真数据。当前阶段不以接入或训练策略模型为前提。
 
